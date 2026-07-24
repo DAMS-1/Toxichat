@@ -40,3 +40,7 @@ out/
 .next/
 .nuxt/
 .cache/
+
+# SQL y documentación
+*.sql
+*.md
