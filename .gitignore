@@ -40,3 +40,10 @@ out/
 .next/
 .nuxt/
 .cache/
+
+# Archivos de Base de Datos
+*.sql
+
+# Notas de la IA y comunicación interna
+*.md
+!README.md
