@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Toxichat - Panel de Chats (Lau)</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background-color: #f4f4f9; }
+        #chat-container { width: 400px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        #panel-mensajes { height: 300px; border: 1px solid #ddd; overflow-y: scroll; padding: 10px; margin-bottom: 10px; display: flex; flex-direction: column-reverse; }
+        .mensaje-item { background: #e2e8f0; padding: 8px 12px; border-radius: 6px; margin-bottom: 8px; }
+        .bloqueado { background: #fed7d7; color: #c53030; }
+    </style>
+</head>
+<body>
+
+    <div id="chat-container">
+        <h2>Panel de Mensajes (Pila)</h2>
+        <!-- Aquí se MOSTRARAN los mensajes usando la Pila -->
+        <div id="panel-mensajes"></div>
+    </div>
+
+    <!-- Importamos el script de lógica -->
+    <script src="app.js"></script>
+</body>
+</html>
