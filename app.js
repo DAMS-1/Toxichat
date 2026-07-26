@@ -35,11 +35,28 @@ function obtenerPilaChat(idChat) {
     return pilasPorChat[idChat];
 }
 
-// --- SIMULACIÓN DEL MÓDULO DE DIEGO (GRAFO SOCIAL) ---
+// --- MÓDULO DE DIEGO (GRAFO SOCIAL) ---
+window.socialGraph = window.Graph ? new window.Graph() : null;
+
+async function cargarGrafoSocial() {
+    if (!window.socialGraph) return;
+    console.log("[Diego] Inicializando Grafo Social y cargando conexiones...");
+    
+    // Mock de conexiones y usuarios para que Dijkstra funcione
+    if (usuarioActual && usuarioActual.id) {
+        window.socialGraph.addNode(usuarioActual.id);
+        
+        // Asignamos una red de prueba:
+        window.socialGraph.addEdge(usuarioActual.id, "santi_dev", 99);
+        window.socialGraph.addEdge("santi_dev", "lau_ui", 15);
+        window.socialGraph.addEdge("santi_dev", "carlos_test", 5);
+    }
+}
+
 function esAmigoEnGrafo(remitenteId) {
-    // Simulamos una lista de amigos permitidos
-    const amigosPermitidos = ["usuario1", "amigo_diego", "santi_dev"];
-    return amigosPermitidos.includes(remitenteId);
+    if (!usuarioActual || !window.socialGraph) return false;
+    const res = window.socialGraph.dijkstra(remitenteId, usuarioActual.id);
+    return res.cost !== Infinity && res.path.length > 0;
 }
 
 // --- LÓGICA DE RECEPCIÓN DE MENSAJES ---
@@ -92,6 +109,9 @@ function mostrarAppAutenticada(sesion) {
         rsa_e: sesion.rsa_e,
         rsa_n: sesion.rsa_n,
     };
+
+    // Al autenticarnos, poblamos el grafo social del usuario
+    cargarGrafoSocial();
 
     document.getElementById("pantalla-login").style.display = "none";
     document.getElementById("pantalla-app").style.display = "block";
