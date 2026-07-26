@@ -154,10 +154,24 @@ function loginDB_SANTI(email, password) {
  * @param {string} destinoId - ID del destinatario.
  * @returns {boolean} - Debes retornar TRUE si el costo en Dijkstra es diferente de Infinity, FALSE si están desconectados.
  */
+
 function validarRuta_DIEGO(origenId, destinoId) {
-    // TODO (Diego): Instanciar `const socialGraph = new Graph()` y correr `socialGraph.dijkstra(origenId, destinoId)`.
-    console.warn(`[Mock Diego] Evaluando Dijkstra desde ${origenId} hasta ${destinoId}`);
-    return true; // Simulado en true para que pasen los mensajes de prueba.
+    // 1. Si no hay origen o destino definidos, no hay ruta
+    if (!origenId || !destinoId) return false;
+
+    // 2. Ejecutar Dijkstra usando la clase Graph que construimos
+    const resultado = socialGraph.dijkstra(origenId, destinoId);
+
+    // 3. Si el costo es diferente de Infinito y la ruta no está vacía, hay conexión
+    const hayConexion = resultado.cost !== Infinity && resultado.path.length > 0;
+
+    console.log(`[Dijkstra Diego] Evaluando ruta ${origenId} -> ${destinoId}:`, {
+        camino: resultado.path,
+        costo: resultado.cost,
+        esValida: hayConexion
+    });
+
+    return hayConexion;
 }
 
 /**
