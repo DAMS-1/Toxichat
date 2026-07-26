@@ -10,14 +10,140 @@
         #panel-mensajes { height: 300px; border: 1px solid #ddd; overflow-y: scroll; padding: 10px; margin-bottom: 10px; display: flex; flex-direction: column-reverse; }
         .mensaje-item { background: #e2e8f0; padding: 8px 12px; border-radius: 6px; margin-bottom: 8px; }
         .bloqueado { background: #fed7d7; color: #c53030; }
+        /* --- NUEVOS ESTILOS PARA LA APP (UI/UX) --- */
+        #pantalla-login { width: 300px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin: 0 auto; text-align: center; }
+        #pantalla-app { display: none; } /* La app inicia oculta hasta hacer login */
+        .input-form { width: 100%; padding: 8px; margin-bottom: 10px; box-sizing: border-box; }
+        button { padding: 10px 15px; background: #2b6cb0; color: white; border: none; border-radius: 4px; cursor: pointer; width: 100%; }
+        button:hover { background: #2c5282; }
+        .app-container { position: relative; height: 550px; padding-bottom: 50px; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .vista { display: none; height: 100%; padding: 20px; box-sizing: border-box; overflow-y: auto; }
+        .vista.activa { display: block; }
+        
+        /* Barra de navegación inferior */
+        .bottom-nav { position: absolute; bottom: 0; left: 0; right: 0; display: flex; border-top: 1px solid #ccc; background: white; height: 50px; }
+        .bottom-nav button { flex: 1; border-radius: 0; background: transparent; color: #555; border: none; font-weight: bold; border-right: 1px solid #eee; font-size: 14px; }
+        .bottom-nav button:last-child { border-right: none; }
+        .bottom-nav button:hover, .bottom-nav button.activo { background: #f4f4f9; color: #2b6cb0; border-bottom: 3px solid #2b6cb0; }
+        
+        /* Lista de Chats y Botón Amigo */
+        .cabecera-principal { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .btn-pequeno { padding: 5px 10px; width: auto; font-size: 12px; }
+        .chat-item { display: flex; align-items: center; padding: 12px; border-bottom: 1px solid #eee; cursor: pointer; transition: background 0.2s; }
+        .chat-item:hover { background: #f9f9f9; }
+        .avatar { min-width: 45px; height: 45px; background: #2b6cb0; color: white; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-weight: bold; margin-right: 15px; font-size: 18px; }
+        .chat-info h4 { margin: 0 0 5px 0; font-size: 15px; color: #333; }
+        .chat-info p { margin: 0; font-size: 13px; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+        
+        /* Chat Individual */
+        .chat-header { display: flex; align-items: center; background: #2b6cb0; color: white; padding: 10px 15px; border-radius: 8px 8px 0 0; margin: -20px -20px 15px -20px; }
+        .chat-header h3 { flex: 1; margin: 0 15px; cursor: pointer; text-align: center; font-size: 16px; }
+        .chat-header h3:hover { text-decoration: underline; }
+        .chat-header button { width: auto; padding: 6px 10px; background: transparent; border: 1px solid rgba(255,255,255,0.5); color: white; border-radius: 4px; }
+        .chat-header button:hover { background: rgba(255,255,255,0.2); }
+        
+        /* Perfil y Modal */
+        .avatar-grande { width: 90px; height: 90px; background: #e2e8f0; border-radius: 50%; font-size: 40px; display: flex; justify-content: center; align-items: center; margin: 0 auto 20px auto; color: #555; }
+        .perfil-seccion { background: #f9f9f9; padding: 15px; border-radius: 8px; border: 1px solid #ddd; }
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+        .modal.oculta { display: none; }
+        .modal-content { background: white; padding: 25px; border-radius: 8px; width: 280px; text-align: center; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .close-btn { position: absolute; top: 10px; right: 15px; cursor: pointer; font-size: 24px; color: #888; }
+        .close-btn:hover { color: #333; }
     </style>
 </head>
 <body>
+    <!-- PANTALLA 1: INICIO DE SESIÓN -->
+    <div id="pantalla-login">
+        <h2>Iniciar Sesión</h2>
+        <input type="email" id="email-input" class="input-form" placeholder="Correo electrónico">
+        <input type="password" id="password-input" class="input-form" placeholder="Contraseña">
+        <button onclick="iniciarSesion()">Entrar</button>
+    </div>
 
-    <div id="chat-container">
-        <h2>Panel de Mensajes (Pila)</h2>
-        <!-- Aquí se MOSTRARAN los mensajes usando la Pila -->
-        <div id="panel-mensajes"></div>
+    <!-- PANTALLA 2: APLICACIÓN PRINCIPAL (Oculta al inicio) -->
+    <div id="pantalla-app" class="app-container">
+        
+        <!-- ================= VISTA 1: LISTA DE CHATS ================= -->
+        <div id="vista-chats" class="vista activa">
+            <div class="cabecera-principal">
+                <h2 style="margin:0;">Mis Chats</h2>
+                <button class="btn-pequeno" onclick="agregarAmigo()">+ Agregar Amigo</button>
+            </div>
+            
+            <div id="lista-chats-container">
+                <!-- Simulando un chat activo (Luego se generará con JS) -->
+                <div class="chat-item" onclick="abrirChat('santi_dev', 'Santi', 'santi@toxichat.com')">
+                    <div class="avatar">S</div>
+                    <div class="chat-info">
+                        <h4>Santi</h4>
+                        <p>Ya quedó lista la base de datos.</p>
+                    </div>
+                </div>
+                <div class="chat-item" onclick="abrirChat('amigo_diego', 'Diego', 'diego@toxichat.com')">
+                    <div class="avatar">D</div>
+                    <div class="chat-info">
+                        <h4>Diego</h4>
+                        <p>El grafo ya calcula la ruta más corta.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= VISTA 2: CHAT INDIVIDUAL ================= -->
+        <div id="vista-chat-individual" class="vista oculta">
+            <div class="chat-header">
+                <button onclick="volverAChats()">⬅</button>
+                <!-- Al hacer clic en el nombre se abre el perfil del amigo -->
+                <h3 onclick="abrirModalAmigo()" id="chat-actual-alias">Nombre</h3>
+                <button onclick="cambiarAlias()">✏️</button>
+            </div>
+            
+            <div id="chat-container-interno">
+                <!-- Aquí se dibujan los mensajes de la Pila -->
+                <div id="panel-mensajes"></div>
+                <hr>
+                <!-- Destinatario oculto (se asigna automáticamente al hacer clic en el chat) -->
+                <input type="hidden" id="destinatario-input">
+                <input type="hidden" id="correo-amigo-actual">
+                <input type="text" id="mensaje-input" class="input-form" placeholder="Escribe tu mensaje...">
+                <button onclick="enviarMensaje()">Enviar</button>
+            </div>
+        </div>
+
+        <!-- ================= VISTA 3: MI PERFIL ================= -->
+        <div id="vista-perfil" class="vista oculta">
+            <h2 style="margin-top:0;">Mi Perfil</h2>
+            <div class="avatar-grande">👤</div>
+            <div class="perfil-seccion">
+                <label><strong>Nombre a mostrar:</strong></label>
+                <input type="text" id="perfil-nombre" class="input-form">
+                
+                <label><strong>Estado personal:</strong></label>
+                <textarea id="perfil-estado" class="input-form" placeholder="Escribe un estado (Ej: Trabajando en el backend)"></textarea>
+                
+                <button onclick="guardarPerfil()">Guardar Cambios</button>
+            </div>
+        </div>
+
+        <!-- ================= BARRA DE NAVEGACIÓN INFERIOR ================= -->
+        <div class="bottom-nav">
+            <button id="nav-chats" class="activo" onclick="cambiarVista('vista-chats', 'nav-chats')">💬 Chats</button>
+            <button id="nav-perfil" onclick="cambiarVista('vista-perfil', 'nav-perfil')">👤 Mi Perfil</button>
+        </div>
+
+    </div>
+
+    <!-- ================= MODAL: DETALLES DEL AMIGO ================= -->
+    <div id="modal-amigo" class="modal oculta">
+        <div class="modal-content">
+            <span class="close-btn" onclick="cerrarModalAmigo()">&times;</span>
+            <div class="avatar-grande" id="modal-amigo-avatar">?</div>
+            <h2 id="modal-amigo-nombre" style="margin-bottom: 5px;">Nombre Amigo</h2>
+            <p style="color: #666; margin-top: 0;" id="modal-amigo-correo">correo@ejemplo.com</p>
+            <hr>
+            <p style="font-size: 13px; color: #888;"><em>Espacio para futuros datos (Ej: Conexión en el grafo de confianza, fecha de registro).</em></p>
+        </div>
     </div>
 
     <!-- Importamos el script de lógica -->
