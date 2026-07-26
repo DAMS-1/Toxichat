@@ -53,12 +53,15 @@
     </style>
 </head>
 <body>
-    <!-- PANTALLA 1: INICIO DE SESIÓN -->
+    <!-- PANTALLA 1: INICIO DE SESIÓN / REGISTRO (Santi → Supabase + SQL) -->
     <div id="pantalla-login">
-        <h2>Iniciar Sesión</h2>
+        <h2>Toxichat</h2>
+        <p style="color:#666; font-size:13px;">Login y registro contra la base de datos</p>
         <input type="email" id="email-input" class="input-form" placeholder="Correo electrónico">
         <input type="password" id="password-input" class="input-form" placeholder="Contraseña">
         <button onclick="iniciarSesion()">Entrar</button>
+        <button onclick="registrarCuenta()" style="margin-top:8px; background:#2f855a;">Registrar</button>
+        <p id="auth-mensaje" style="margin-top:12px; font-size:13px; color:#444;"></p>
     </div>
 
     <!-- PANTALLA 2: APLICACIÓN PRINCIPAL (Oculta al inicio) -->
@@ -68,7 +71,10 @@
         <div id="vista-chats" class="vista activa">
             <div class="cabecera-principal">
                 <h2 style="margin:0;">Mis Chats</h2>
-                <button class="btn-pequeno" onclick="agregarAmigo()">+ Agregar Amigo</button>
+                <div>
+                    <span id="nombre-usuario-activo" style="font-size:13px; color:#555; margin-right:8px;"></span>
+                    <button class="btn-pequeno" onclick="agregarAmigo()">+ Agregar Amigo</button>
+                </div>
             </div>
             
             <div id="lista-chats-container">
@@ -146,7 +152,13 @@
         </div>
     </div>
 
-    <!-- Importamos el script de lógica -->
+    <!-- Scripts: config → Supabase SDK → cliente DB → RSA → Auth (Santi) → Grafo → UI -->
+    <script src="config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="src/supabaseClient.js"></script>
+    <script src="Criptografia/critografia.js"></script>
+    <script src="login/auth.js"></script>
+    <script src="src/utils/Graph.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

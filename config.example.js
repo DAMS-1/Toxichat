@@ -1,0 +1,5 @@
+﻿
+window.TOXICHAT_CONFIG = {
+  SUPABASE_URL: "https://TU_PROYECTO.supabase.co",
+  SUPABASE_ANON_KEY: "tu_anon_key",
+};

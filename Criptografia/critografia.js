@@ -213,9 +213,15 @@ function demostrar() {
   console.log("Texto descifrado:", recuperado);
 }
 
-demostrar();
-// Exporta las funciones por si se usan desde otro módulo
-module.exports = {
+/** Serializa la clave pública para guardarla en perfiles (Supabase). */
+function clavePublicaParaBd(clavePublica = CLAVE_PUBLICA) {
+  return {
+    e: String(clavePublica.e),
+    n: String(clavePublica.n),
+  };
+}
+
+const apiCrypto = {
   P,
   Q,
   CLAVE_PUBLICA,
@@ -232,4 +238,18 @@ module.exports = {
   descifrarNumero,
   cifrarTexto,
   descifrarTexto,
+  clavePublicaParaBd,
 };
+
+// Solo corre la demo al ejecutar el archivo con Node directamente
+if (typeof require !== "undefined" && require.main === module) {
+  demostrar();
+}
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = apiCrypto;
+}
+
+if (typeof window !== "undefined") {
+  window.ToxichatCrypto = apiCrypto;
+}

@@ -83,49 +83,98 @@ setTimeout(() => {
 
 let usuarioActual = null; // Guardará los datos de quien inicie sesión
 
-function iniciarSesion() {
+function mostrarAppAutenticada(sesion) {
+    usuarioActual = {
+        id: sesion.email,
+        nombre: sesion.email,
+        email: sesion.email,
+        uuid: sesion.id,
+        rsa_e: sesion.rsa_e,
+        rsa_n: sesion.rsa_n,
+    };
+
+    document.getElementById("pantalla-login").style.display = "none";
+    document.getElementById("pantalla-app").style.display = "block";
+
+    const etiqueta = document.getElementById("nombre-usuario-activo");
+    if (etiqueta) etiqueta.textContent = usuarioActual.nombre;
+
+    const perfilNombre = document.getElementById("perfil-nombre");
+    if (perfilNombre) perfilNombre.value = usuarioActual.nombre;
+}
+
+async function iniciarSesion() {
     const email = document.getElementById("email-input").value;
     const password = document.getElementById("password-input").value;
+    const mensaje = document.getElementById("auth-mensaje");
 
-    // Conectamos con el módulo de Santi (Hueco)
-    const loginExitoso = loginDB_SANTI(email, password);
+    if (mensaje) mensaje.textContent = "Validando credenciales...";
 
-    if (loginExitoso) {
-        // Simulamos que la DB nos devuelve los datos del perfil
-        usuarioActual = { id: email.split("@")[0], nombre: email.split("@")[0] }; 
-        
-        // Transición de interfaz: Ocultar login, mostrar app
-        document.getElementById("pantalla-login").style.display = "none";
-        document.getElementById("pantalla-app").style.display = "block";
-        document.getElementById("nombre-usuario-activo").textContent = usuarioActual.nombre;
+    const resultado = await loginDB_SANTI(email, password);
+
+    if (resultado && resultado.ok && resultado.sesion) {
+        if (mensaje) mensaje.textContent = resultado.mensaje;
+        mostrarAppAutenticada(resultado.sesion);
     } else {
-        alert("Credenciales incorrectas o error en la BD.");
+        const texto = (resultado && resultado.mensaje) || "Credenciales incorrectas o error en la BD.";
+        if (mensaje) mensaje.textContent = texto;
+        alert(texto);
     }
 }
 
-function enviarMensaje() {
+async function registrarCuenta() {
+    const email = document.getElementById("email-input").value;
+    const password = document.getElementById("password-input").value;
+    const mensaje = document.getElementById("auth-mensaje");
+
+    if (mensaje) mensaje.textContent = "Creando cuenta...";
+
+    const resultado = await registrarDB_SANTI({
+        email,
+        contrasena: password,
+    });
+
+    if (resultado && resultado.ok) {
+        if (mensaje) mensaje.textContent = resultado.mensaje;
+        if (resultado.sesion) {
+            mostrarAppAutenticada(resultado.sesion);
+        } else {
+            alert(resultado.mensaje);
+        }
+    } else {
+        const texto = (resultado && resultado.mensaje) || "No se pudo registrar el usuario.";
+        if (mensaje) mensaje.textContent = texto;
+        alert(texto);
+    }
+}
+
+async function enviarMensaje() {
     const destinatario = document.getElementById("destinatario-input").value;
     const texto = document.getElementById("mensaje-input").value;
+    const correoDestino = document.getElementById("correo-amigo-actual").value;
 
     if (!destinatario || !texto) {
         alert("Por favor, llena el destinatario y el mensaje.");
         return;
     }
 
-    // 1. Validar conexión usando el módulo de Diego (Hueco)
+    // 1. Validar conexión usando el módulo de Diego
     const rutaValida = validarRuta_DIEGO(usuarioActual.id, destinatario);
 
     if (rutaValida) {
-        // 2. Cifrar y guardar usando el módulo de Santi (Hueco)
-        const guardadoExitoso = enviarMensajeDB_SANTI(usuarioActual.id, destinatario, texto);
-        
+        // 2. Cifrar y guardar (Santi: RSA + Supabase)
+        const guardadoExitoso = await enviarMensajeDB_SANTI(
+            usuarioActual.id,
+            destinatario,
+            texto,
+            correoDestino
+        );
+
         if (guardadoExitoso) {
-            // 3. Renderizar en la pila específica del destinatario
             const pila = obtenerPilaChat(destinatario);
             pila.push({ remitente: "Yo", texto: texto });
             pila.actualizarDOM();
-            
-            document.getElementById("mensaje-input").value = ""; // Limpiamos la caja de texto
+            document.getElementById("mensaje-input").value = "";
         }
     } else {
         alert("No tienes conexión en el grafo con este usuario (Costo: Infinity).");
@@ -137,15 +186,38 @@ function enviarMensaje() {
 // =========================================================
 
 /**
- * @SANTI: Lógica de Autenticación con Supabase
- * @param {string} email - Correo extraído del input.
- * @param {string} password - Contraseña extraída del input.
- * @returns {boolean} - Debes retornar TRUE si las credenciales coinciden en BD, FALSE si fallan.
+ * @SANTI: Login con Supabase Auth + perfil SQL (perfiles).
+ * @returns {Promise<{ok:boolean, mensaje:string, sesion:object|null}>}
  */
-function loginDB_SANTI(email, password) {
-    // TODO (Santi): Implementar consulta a Supabase.
-    console.warn(`[Mock Santi] Validando login para: ${email}`);
-    return true; // Simulado en true para que la UI funcione mientras tanto.
+async function loginDB_SANTI(email, password) {
+    if (!window.ToxichatAuth || typeof window.ToxichatAuth.iniciarSesion !== "function") {
+        return { ok: false, mensaje: "Módulo de autenticación no cargado.", sesion: null };
+    }
+    if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado()) {
+        return {
+            ok: false,
+            mensaje: "Configura config.js con tu SUPABASE_URL y SUPABASE_ANON_KEY.",
+            sesion: null,
+        };
+    }
+    return window.ToxichatAuth.iniciarSesion(email, password);
+}
+
+/**
+ * @SANTI: Registro de usuario (Auth + perfiles + clave RSA pública).
+ */
+async function registrarDB_SANTI(datos) {
+    if (!window.ToxichatAuth || typeof window.ToxichatAuth.registrarUsuario !== "function") {
+        return { ok: false, mensaje: "Módulo de autenticación no cargado.", sesion: null };
+    }
+    if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado()) {
+        return {
+            ok: false,
+            mensaje: "Configura config.js con tu SUPABASE_URL y SUPABASE_ANON_KEY.",
+            sesion: null,
+        };
+    }
+    return window.ToxichatAuth.registrarUsuario(datos);
 }
 
 /**
@@ -175,16 +247,43 @@ function validarRuta_DIEGO(origenId, destinoId) {
 }
 
 /**
- * @SANTI: Cifrado RSA e Inserción en Base de Datos
- * @param {string} remitenteId - ID del usuario actual.
- * @param {string} destinatarioId - ID del receptor.
- * @param {string} mensajePlano - Mensaje recolectado de la interfaz.
- * @returns {boolean} - Retornar TRUE si el insert() en Supabase fue exitoso.
+ * @SANTI: Cifrado RSA e inserción en BD (rpc enviar_mensaje).
+ * @returns {Promise<boolean>}
  */
-function enviarMensajeDB_SANTI(remitenteId, destinatarioId, mensajePlano) {
-    // TODO (Santi): 1. Usar cifrarTexto(mensajePlano) de tu módulo RSA. 2. Subir el array de bloques a Supabase.
-    console.warn(`[Mock Santi] Cifrando y enviando a DB: "${mensajePlano}"`);
-    return true; // Simulado en true para que se apile visualmente el mensaje.
+async function enviarMensajeDB_SANTI(remitenteId, destinatarioId, mensajePlano, emailDestino) {
+    try {
+        if (!window.ToxichatCrypto || typeof window.ToxichatCrypto.cifrarTexto !== "function") {
+            console.error("[Santi] ToxichatCrypto no está disponible.");
+            return false;
+        }
+        if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado()) {
+            console.warn("[Santi] Supabase no configurado; solo se muestra en UI local.");
+            return true;
+        }
+
+        const bloques = window.ToxichatCrypto.cifrarTexto(mensajePlano);
+        const contenidoCifrado = JSON.stringify(bloques.map(String));
+        const destino = emailDestino || destinatarioId;
+
+        const { error } = await window.ToxichatDB.cliente.rpc("enviar_mensaje", {
+            p_email_destino: destino,
+            p_contenido: mensajePlano,
+            p_contenido_cifrado: contenidoCifrado,
+        });
+
+        if (error) {
+            console.error("[Santi] Error al guardar mensaje:", error.message);
+            alert("No se pudo guardar el mensaje en la BD: " + error.message);
+            return false;
+        }
+
+        console.log(`[Santi] Mensaje cifrado y guardado (${remitenteId} -> ${destino}).`);
+        return true;
+    } catch (error) {
+        console.error("[Santi] enviarMensajeDB_SANTI:", error);
+        alert(error.message || String(error));
+        return false;
+    }
 }
 
 // =========================================================
@@ -224,16 +323,13 @@ function agregarAmigo() {
 
 /** Abre la vista individual de un chat específico */
 function abrirChat(amigoId, alias, correo) {
-    // Configuramos los datos internos del chat actual
     document.getElementById("destinatario-input").value = amigoId;
-    document.getElementById("chat-actual-alias").innerText = alias;
-    document.getElementById("correo-amigo-actual").value = correo; // Lo guardamos oculto para el modal
-    
-    // Renderizamos la pila de mensajes específica de este amigo
+    document.getElementById("correo-amigo-actual").value = correo;
+    document.getElementById("chat-actual-alias").innerText = obtenerAliasLocal(correo, alias || correo);
+
     const pila = obtenerPilaChat(amigoId);
     pila.actualizarDOM();
 
-    // Cambiamos a la vista del chat (quitando el foco de la barra inferior)
     cambiarVista("vista-chat-individual", null);
 }
 
@@ -242,14 +338,37 @@ function volverAChats() {
     cambiarVista("vista-chats", "nav-chats");
 }
 
-/** Cambia el alias local (Lápiz en la cabecera) */
+const CLAVE_ALIAS_LOCAL = "toxichat_alias_contactos";
+
+function leerAliasLocales() {
+    try {
+        return JSON.parse(localStorage.getItem(CLAVE_ALIAS_LOCAL) || "{}");
+    } catch (error) {
+        return {};
+    }
+}
+
+function guardarAliasLocal(correoAmigo, alias) {
+    const mapa = leerAliasLocales();
+    mapa[String(correoAmigo).toLowerCase()] = alias;
+    localStorage.setItem(CLAVE_ALIAS_LOCAL, JSON.stringify(mapa));
+}
+
+function obtenerAliasLocal(correoAmigo, fallback) {
+    const mapa = leerAliasLocales();
+    return mapa[String(correoAmigo).toLowerCase()] || fallback;
+}
+
+/** Cambia el alias local del contacto (solo en este navegador) */
 function cambiarAlias() {
     const aliasActual = document.getElementById("chat-actual-alias").innerText;
+    const correoActual = document.getElementById("correo-amigo-actual").value;
     const nuevoAlias = prompt("Cambiar el alias de este contacto:", aliasActual);
-    
+
     if (nuevoAlias && nuevoAlias.trim() !== "") {
-        document.getElementById("chat-actual-alias").innerText = nuevoAlias;
-        // Aquí se podría guardar el alias localmente.
+        const limpio = nuevoAlias.trim();
+        document.getElementById("chat-actual-alias").innerText = limpio;
+        if (correoActual) guardarAliasLocal(correoActual, limpio);
     }
 }
 
@@ -282,7 +401,20 @@ function guardarPerfil() {
         return;
     }
 
-    // TODO (Santi): Actualizar perfil en Supabase
     usuarioActual.nombre = nuevoNombre;
-    alert(`Perfil guardado con éxito.\nNombre: ${nuevoNombre}\nEstado: ${nuevoEstado}`);
+    document.getElementById("nombre-usuario-activo").textContent = nuevoNombre;
+    alert(`Perfil guardado localmente.\nNombre: ${nuevoNombre}\nEstado: ${nuevoEstado}`);
 }
+
+/** Restaura sesión si ya hay token de Supabase */
+async function intentarRestaurarSesion() {
+    if (!window.ToxichatAuth || typeof window.ToxichatAuth.obtenerSesion !== "function") return;
+    if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado()) return;
+
+    const sesion = await window.ToxichatAuth.obtenerSesion();
+    if (sesion) mostrarAppAutenticada(sesion);
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+    intentarRestaurarSesion();
+});
