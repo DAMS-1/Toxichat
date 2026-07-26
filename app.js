@@ -35,6 +35,10 @@ function obtenerPilaChat(idChat) {
     return pilasPorChat[idChat];
 }
 
+// --- INSTANCIA GLOBAL DEL GRAFO ---
+const socialGraph = new Graph();
+// Las aristas se inicializarán una vez que el usuario se autentique (mostrarAppAutenticada)
+
 // --- SIMULACIÓN DEL MÓDULO DE DIEGO (GRAFO SOCIAL) ---
 function esAmigoEnGrafo(remitenteId) {
     // Simulamos una lista de amigos permitidos
@@ -94,13 +98,18 @@ function mostrarAppAutenticada(sesion) {
     };
 
     document.getElementById("pantalla-login").style.display = "none";
-    document.getElementById("pantalla-app").style.display = "block";
+    document.getElementById("pantalla-app").style.display = "flex"; // Ahora es flex para el sidebar
 
     const etiqueta = document.getElementById("nombre-usuario-activo");
     if (etiqueta) etiqueta.textContent = usuarioActual.nombre;
 
     const perfilNombre = document.getElementById("perfil-nombre");
     if (perfilNombre) perfilNombre.value = usuarioActual.nombre;
+
+    // Conectar el usuario actual al grafo con los contactos base
+    socialGraph.addEdge(usuarioActual.id, "santi_dev", 50);
+    socialGraph.addEdge(usuarioActual.id, "amigo_diego", 30);
+    actualizarListaAmigos();
 }
 
 async function iniciarSesion() {
@@ -119,6 +128,26 @@ async function iniciarSesion() {
         const texto = (resultado && resultado.mensaje) || "Credenciales incorrectas o error en la BD.";
         if (mensaje) mensaje.textContent = texto;
         alert(texto);
+    }
+}
+async function cerrarSesionApp() {
+    // 1. Limpiar los datos del usuario actual en memoria
+    usuarioActual = null;
+
+    // 2. Ocultar la aplicación y mostrar el login nuevamente
+    document.getElementById("pantalla-app").style.display = "none";
+    document.getElementById("pantalla-login").style.display = "block";
+
+    // 3. Limpiar los campos de texto del formulario de login
+    document.getElementById("email-input").value = "";
+    document.getElementById("password-input").value = "";
+    
+    const mensaje = document.getElementById("auth-mensaje");
+    if (mensaje) mensaje.textContent = "Sesión cerrada correctamente.";
+
+    // 4. Conectar con el módulo de Supabase de Santi para cerrar la sesión en el backend (si existe)
+    if (window.ToxichatAuth && typeof window.ToxichatAuth.cerrarSesion === "function") {
+        await window.ToxichatAuth.cerrarSesion();
     }
 }
 
@@ -290,7 +319,7 @@ async function enviarMensajeDB_SANTI(remitenteId, destinatarioId, mensajePlano, 
 // --- LÓGICA DE NAVEGACIÓN Y UI REDISEÑADA ---
 // =========================================================
 
-/** Navegación entre las vistas principales (Chats / Perfil) */
+/** Navegación entre las vistas principales (Chats / Perfil / Social) */
 function cambiarVista(idVistaActiva, idBotonActivo) {
     // 1. Ocultar todas las vistas
     document.getElementById("vista-chats").classList.add("oculta");
@@ -299,6 +328,8 @@ function cambiarVista(idVistaActiva, idBotonActivo) {
     document.getElementById("vista-perfil").classList.remove("activa");
     document.getElementById("vista-chat-individual").classList.add("oculta");
     document.getElementById("vista-chat-individual").classList.remove("activa");
+    document.getElementById("vista-social").classList.add("oculta");
+    document.getElementById("vista-social").classList.remove("activa");
 
     // 2. Mostrar la vista seleccionada
     document.getElementById(idVistaActiva).classList.remove("oculta");
@@ -308,6 +339,7 @@ function cambiarVista(idVistaActiva, idBotonActivo) {
     if(idBotonActivo) {
         document.getElementById("nav-chats").classList.remove("activo");
         document.getElementById("nav-perfil").classList.remove("activo");
+        document.getElementById("nav-social").classList.remove("activo");
         document.getElementById(idBotonActivo).classList.add("activo");
     }
 }
@@ -402,17 +434,78 @@ function guardarPerfil() {
     }
 
     usuarioActual.nombre = nuevoNombre;
-    document.getElementById("nombre-usuario-activo").textContent = nuevoNombre;
-    alert(`Perfil guardado localmente.\nNombre: ${nuevoNombre}\nEstado: ${nuevoEstado}`);
+    contenedor.innerHTML = "";
+    const misConexiones = socialGraph.nodes[usuarioActual.id] || {};
+    const amigosIds = Object.keys(misConexiones);
+
+    if (amigosIds.length === 0) {
+        contenedor.innerHTML = '<p style="color: #666; font-size: 13px;">Aún no tienes amigos agregados.</p>';
+        return;
+    }
+
+    amigosIds.forEach(idAmigo => {
+        const div = document.createElement("div");
+        div.className = "solicitud-item";
+        div.id = `amigo-perfil-${idAmigo}`;
+        div.innerHTML = `
+            <span style="color: #39ff14;">${idAmigo}</span>
+            <button class="btn-rechazar" onclick="eliminarAmigo('${idAmigo}')">Eliminar</button>
+        `;
+        contenedor.appendChild(div);
+    });
 }
 
-/** Restaura sesión si ya hay token de Supabase */
-async function intentarRestaurarSesion() {
-    if (!window.ToxichatAuth || typeof window.ToxichatAuth.obtenerSesion !== "function") return;
-    if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado()) return;
+function aceptarAmigo(idAmigo, nombre, correo) {
+    if(!usuarioActual) return;
 
-    const sesion = await window.ToxichatAuth.obtenerSesion();
-    if (sesion) mostrarAppAutenticada(sesion);
+    // 1. Añadir al Grafo (peso 100 por defecto)
+    socialGraph.addEdge(usuarioActual.id, idAmigo, 100);
+
+    // 2. Insertar al inicio de Mis Chats
+    const listaChats = document.getElementById("lista-chats-container");
+    const nuevoChat = document.createElement("div");
+    nuevoChat.className = "chat-item";
+    nuevoChat.id = `chat-${idAmigo}`;
+    nuevoChat.onclick = () => abrirChat(idAmigo, nombre, correo);
+    nuevoChat.innerHTML = `
+        <div class="avatar">${nombre.charAt(0).toUpperCase()}</div>
+        <div class="chat-info">
+            <h4>${nombre}</h4>
+            <p>Nuevo contacto (Grafo conectado)</p>
+        </div>
+    `;
+    listaChats.prepend(nuevoChat);
+
+    // 3. Eliminar la solicitud de la UI
+    const solicitud = document.getElementById(`solicitud-${idAmigo.split('_')[0]}`);
+    if (solicitud) solicitud.remove();
+
+    // 4. Actualizar lista de "Mis Amigos"
+    actualizarListaAmigos();
+    alert(` ${nombre} ha sido agregado a tu lista de amigos y chats.`);
+}
+
+function rechazarSolicitud(idDOM) {
+    const el = document.getElementById(idDOM);
+    if(el) el.remove();
+}
+
+function eliminarAmigo(idAmigo) {
+    if(!usuarioActual || !socialGraph.nodes[usuarioActual.id]) return;
+
+    // 1. Quitar conexión del Grafo
+    delete socialGraph.nodes[usuarioActual.id][idAmigo];
+    if (socialGraph.nodes[idAmigo]) {
+        delete socialGraph.nodes[idAmigo][usuarioActual.id];
+    }
+
+    // 2. Quitar de la lista de chats
+    const chatEl = document.getElementById(`chat-${idAmigo}`);
+    if(chatEl) chatEl.remove();
+
+    // 3. Actualizar UI
+    actualizarListaAmigos();
+    alert(`Amigo ${idAmigo} eliminado. Ya no podrás enviarle mensajes (Costo: Infinity).`);
 }
 
 document.addEventListener("DOMContentLoaded", function () {
