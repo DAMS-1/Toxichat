@@ -35,6 +35,81 @@ function obtenerPilaChat(idChat) {
     return pilasPorChat[idChat];
 }
 
+// --- ESTRUCTURA DE DATOS: PILA DE SOLICITUDES DE AMISTAD (SANTI) ---
+// Reutiliza el patrón LIFO de PilaMensajes para las notificaciones de amistad.
+// La cima de la pila es la solicitud más reciente (última en llegar).
+class PilaSolicitudes {
+    constructor() {
+        this.elementos = [];
+    }
+
+    // Apilar: inserta una solicitud en la cima
+    push(solicitud) {
+        this.elementos.push(solicitud);
+    }
+
+    // Desapilar: extrae la solicitud de la cima
+    pop() {
+        return this.elementos.pop();
+    }
+
+    estaVacia() {
+        return this.elementos.length === 0;
+    }
+
+    get tamaño() {
+        return this.elementos.length;
+    }
+
+    // Elimina una solicitud específica por su ID (tras aceptar o rechazar)
+    eliminar(solicitudId) {
+        const idx = this.elementos.findIndex(s => s.solicitud_id === solicitudId);
+        if (idx !== -1) this.elementos.splice(idx, 1);
+    }
+
+    // Renderiza la pila en el DOM (LIFO: cima primero)
+    actualizarDOM() {
+        const panel = document.getElementById("panel-solicitudes");
+        const badge = document.getElementById("badge-solicitudes");
+
+        if (badge) {
+            badge.textContent = this.elementos.length > 0 ? this.elementos.length : "";
+            badge.style.display = this.elementos.length > 0 ? "inline" : "none";
+        }
+
+        if (!panel) return;
+        panel.innerHTML = "";
+
+        if (this.estaVacia()) {
+            panel.innerHTML = "<p class='solicitudes-vacia'>No tienes solicitudes pendientes.</p>";
+            return;
+        }
+
+        // Recorremos de la cima hacia abajo (LIFO)
+        for (let i = this.elementos.length - 1; i >= 0; i--) {
+            const sol = this.elementos[i];
+            const div = document.createElement("div");
+            div.className = "solicitud-item";
+            div.dataset.solicitudId = sol.solicitud_id;
+            div.innerHTML = `
+                <div class="solicitud-avatar">${(sol.alias || sol.email || "?").charAt(0).toUpperCase()}</div>
+                <div class="solicitud-info">
+                    <strong>${sol.alias || sol.email}</strong>
+                    <small>${sol.email}</small>
+                </div>
+                <div class="solicitud-acciones">
+                    <button class="btn-sol-aceptar" onclick="aceptarSolicitud('${sol.solicitud_id}')">✓</button>
+                    <button class="btn-sol-rechazar" onclick="rechazarSolicitud('${sol.solicitud_id}')">✗</button>
+                </div>
+            `;
+            panel.appendChild(div);
+        }
+    }
+}
+
+// Instancia global de la pila de solicitudes
+const pilaSolicitudes = new PilaSolicitudes();
+
 // --- SIMULACIÓN DEL MÓDULO DE DIEGO (GRAFO SOCIAL) ---
 function esAmigoEnGrafo(remitenteId) {
     // Simulamos una lista de amigos permitidos
@@ -101,6 +176,10 @@ function mostrarAppAutenticada(sesion) {
 
     const perfilNombre = document.getElementById("perfil-nombre");
     if (perfilNombre) perfilNombre.value = usuarioActual.nombre;
+
+    // Cargar solicitudes pendientes e iniciar escucha en tiempo real (Santi)
+    cargarSolicitudesPendientes();
+    iniciarRealtime();
 }
 
 async function iniciarSesion() {
@@ -312,13 +391,192 @@ function cambiarVista(idVistaActiva, idBotonActivo) {
     }
 }
 
-/** Funcionalidad para agregar un nuevo amigo */
-function agregarAmigo() {
+/** Envía una solicitud de amistad buscando al usuario por email en la BD (Santi) */
+async function agregarAmigo() {
     const correoAmigo = prompt("Ingresa el CORREO ELECTRÓNICO (único) de tu nuevo amigo:");
-    if (correoAmigo && correoAmigo.trim() !== "") {
-        // TODO (Santi/Diego): Conectar con la BD para buscar el correo y añadir nodo al Grafo.
-        alert(`Solicitud enviada o amigo agregado con el correo: ${correoAmigo}`);
+    if (!correoAmigo || correoAmigo.trim() === "") return;
+
+    if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado()) {
+        alert("La base de datos no está configurada.");
+        return;
     }
+
+    const correoLimpio = correoAmigo.trim().toLowerCase();
+
+    const { data, error } = await window.ToxichatDB.cliente.rpc("enviar_solicitud_amistad", {
+        p_email_destino: correoLimpio,
+    });
+
+    if (error) {
+        console.error("[Santi] enviar_solicitud_amistad:", error.message);
+        alert("No se pudo enviar la solicitud: " + error.message);
+    } else {
+        console.log("[Santi] Solicitud enviada a:", correoLimpio, data);
+        alert(`Solicitud de amistad enviada a ${correoLimpio}.`);
+    }
+}
+
+// =========================================================
+// --- SOLICITUDES DE AMISTAD (SANTI) ---
+// =========================================================
+
+/**
+ * Carga las solicitudes pendientes desde Supabase y las coloca en la pila.
+ * La pila queda lista para que Lau llame a pilaSolicitudes.actualizarDOM().
+ */
+async function cargarSolicitudesPendientes() {
+    if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado()) return;
+
+    const { data, error } = await window.ToxichatDB.cliente.rpc("obtener_solicitudes_pendientes");
+    if (error) {
+        console.error("[Santi] obtener_solicitudes_pendientes:", error.message);
+        return;
+    }
+
+    // Vaciar la pila y recargar desde la BD (más reciente → cima)
+    pilaSolicitudes.elementos = [];
+    const lista = Array.isArray(data) ? data : (data ? [data] : []);
+    // Las insertamos de más antigua a más reciente, así la más nueva queda en la cima
+    lista.slice().reverse().forEach(s => pilaSolicitudes.push(s));
+
+    pilaSolicitudes.actualizarDOM();
+    console.log(`[Santi] ${pilaSolicitudes.tamaño} solicitudes pendientes cargadas.`);
+}
+
+/**
+ * Acepta una solicitud de amistad → crea arista en el grafo (tabla amistades).
+ * @param {string} solicitudId - UUID de la solicitud.
+ */
+async function aceptarSolicitud(solicitudId) {
+    if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado()) return;
+
+    const { error } = await window.ToxichatDB.cliente.rpc("aceptar_solicitud_amistad", {
+        p_solicitud_id: solicitudId,
+    });
+
+    if (error) {
+        console.error("[Santi] aceptar_solicitud_amistad:", error.message);
+        alert("Error al aceptar la solicitud: " + error.message);
+        return;
+    }
+
+    console.log("[Santi] Solicitud aceptada:", solicitudId);
+    pilaSolicitudes.eliminar(solicitudId);
+    pilaSolicitudes.actualizarDOM();
+    alert("¡Solicitud aceptada! Ya son amigos.");
+}
+
+/**
+ * Rechaza una solicitud de amistad.
+ * @param {string} solicitudId - UUID de la solicitud.
+ */
+async function rechazarSolicitud(solicitudId) {
+    if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado()) return;
+
+    const { error } = await window.ToxichatDB.cliente.rpc("rechazar_solicitud_amistad", {
+        p_solicitud_id: solicitudId,
+    });
+
+    if (error) {
+        console.error("[Santi] rechazar_solicitud_amistad:", error.message);
+        alert("Error al rechazar la solicitud: " + error.message);
+        return;
+    }
+
+    console.log("[Santi] Solicitud rechazada:", solicitudId);
+    pilaSolicitudes.eliminar(solicitudId);
+    pilaSolicitudes.actualizarDOM();
+}
+
+/** Muestra u oculta el panel de solicitudes pendientes */
+function togglePanelSolicitudes() {
+    const contenedor = document.getElementById("contenedor-solicitudes");
+    if (!contenedor) return;
+
+    const estaOculto = contenedor.classList.contains("oculta");
+    if (estaOculto) {
+        contenedor.classList.remove("oculta");
+        // Refrescar desde BD al abrir
+        cargarSolicitudesPendientes();
+    } else {
+        contenedor.classList.add("oculta");
+    }
+}
+
+// =========================================================
+// --- SUPABASE REALTIME (SANTI) ---
+// =========================================================
+
+/**
+ * Inicia la suscripción Realtime de Supabase.
+ *
+ * CÓMO FUNCIONA REALTIME:
+ * Supabase Realtime usa WebSockets para escuchar cambios en las tablas de PostgreSQL.
+ * Al habilitar Realtime en el dashboard de Supabase para una tabla, cada INSERT/UPDATE/DELETE
+ * dispara un evento que llega al cliente sin necesidad de hacer polling.
+ *
+ * REQUISITO en el dashboard de Supabase:
+ * Settings → Replication → habilitar Realtime para las tablas `solicitudes_amistad` y `mensajes`.
+ *
+ * CANALES:
+ * - Canal "solicitudes": escucha INSERT en solicitudes_amistad donde para_usuario_id = mi uuid.
+ *   → Recarga la pila automáticamente cuando alguien te envía una solicitud.
+ * - Canal "mensajes" (preparado para Diego/Lau): escucha INSERT en mensajes donde
+ *   destinatario_id = mi uuid. → Pueden usarlo para mostrar mensajes en tiempo real.
+ */
+function iniciarRealtime() {
+    if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado()) return;
+    if (!usuarioActual || !usuarioActual.uuid) return;
+
+    const cliente = window.ToxichatDB.cliente;
+
+    // --- Canal 1: Solicitudes de amistad en tiempo real ---
+    // Filtramos por para_usuario_id = UUID del usuario autenticado.
+    // Cada vez que alguien te envíe una solicitud, la pila se actualiza sola.
+    cliente
+        .channel("canal-solicitudes")
+        .on(
+            "postgres_changes",
+            {
+                event: "INSERT",
+                schema: "public",
+                table: "solicitudes_amistad",
+                filter: `para_usuario_id=eq.${usuarioActual.uuid}`,
+            },
+            (payload) => {
+                console.log("[Realtime] Nueva solicitud de amistad recibida:", payload.new);
+                // Recargamos desde BD para obtener también el alias/email del remitente
+                cargarSolicitudesPendientes();
+            }
+        )
+        .subscribe((status) => {
+            console.log("[Realtime] Estado canal solicitudes:", status);
+        });
+
+    // --- Canal 2: Mensajes entrantes en tiempo real (para Diego y Lau) ---
+    // Diego/Lau pueden conectar el callback 'onMensajeEntrante' para
+    // actualizar la UI cuando llegue un mensaje nuevo.
+    cliente
+        .channel("canal-mensajes")
+        .on(
+            "postgres_changes",
+            {
+                event: "INSERT",
+                schema: "public",
+                table: "mensajes",
+                filter: `destinatario_id=eq.${usuarioActual.uuid}`,
+            },
+            (payload) => {
+                console.log("[Realtime] Nuevo mensaje recibido:", payload.new);
+                // Hook para Diego/Lau: si definen window.onMensajeRealtime, se llama aquí.
+                if (typeof window.onMensajeRealtime === "function") {
+                    window.onMensajeRealtime(payload.new);
+                }
+            }
+        )
+        .subscribe((status) => {
+            console.log("[Realtime] Estado canal mensajes:", status);
+        });
 }
 
 /** Abre la vista individual de un chat específico */
@@ -418,3 +676,10 @@ async function intentarRestaurarSesion() {
 document.addEventListener("DOMContentLoaded", function () {
     intentarRestaurarSesion();
 });
+
+// Exponer funciones clave para que Lau pueda llamarlas desde el HTML sin necesidad de imports:
+// - pilaSolicitudes        → instancia de PilaSolicitudes (push, pop, actualizarDOM, tamaño)
+// - cargarSolicitudesPendientes() → recarga la pila desde Supabase
+// - togglePanelSolicitudes()      → muestra/oculta el panel en vista-perfil
+// - aceptarSolicitud(id)          → llama al RPC y actualiza la pila
+// - rechazarSolicitud(id)         → llama al RPC y actualiza la pila
