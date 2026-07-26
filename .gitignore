@@ -41,9 +41,6 @@ out/
 .nuxt/
 .cache/
 
-# Archivos de Base de Datos
+# SQL y documentación
 *.sql
-
-# comunicación interna
 *.md
-!README.md
