@@ -124,4 +124,10 @@ class Graph {
   }
 }
 
-module.exports = Graph;
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = Graph;
+}
+
+if (typeof window !== "undefined") {
+  window.Graph = Graph;
+}
