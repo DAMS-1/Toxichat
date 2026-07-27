@@ -39,18 +39,124 @@ function obtenerPilaChat(idChat) {
 window.socialGraph = window.Graph ? new window.Graph() : null;
 
 async function cargarGrafoSocial() {
-    if (!window.socialGraph) return;
-    console.log("[Diego] Inicializando Grafo Social y cargando conexiones...");
+    if (!window.socialGraph || !usuarioActual || !usuarioActual.id) return;
+    console.log("[Grafo Social] Cargando conexiones reales desde la base de datos...");
 
-    // Mock de conexiones y usuarios para que Dijkstra funcione
-    if (usuarioActual && usuarioActual.id) {
-        window.socialGraph.addNode(usuarioActual.id);
+    window.socialGraph.addNode(usuarioActual.id);
 
-        // Asignamos una red de prueba:
-        window.socialGraph.addEdge(usuarioActual.id, "santi_dev", 99);
-        window.socialGraph.addEdge("santi_dev", "lau_ui", 15);
-        window.socialGraph.addEdge("santi_dev", "carlos_test", 5);
+    if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado()) {
+        return;
     }
+
+    try {
+        const { data, error } = await window.ToxichatDB.cliente.rpc('obtener_grafo_amistades');
+        if (error) {
+            console.error("[Grafo Social] Error al obtener el grafo de la BD:", error.message);
+            return;
+        }
+
+        if (Array.isArray(data)) {
+            data.forEach(arista => {
+                // arista: { usuario_a, usuario_b, mensajes, peso }
+                window.socialGraph.addEdge(arista.usuario_a, arista.usuario_b, arista.mensajes || 0);
+            });
+        }
+    } catch (error) {
+        console.error("[Grafo Social] Excepción al cargar conexiones:", error);
+    }
+}
+
+async function cargarListaChats() {
+    const listaChats = document.getElementById("lista-chats-container");
+    if (!listaChats) return;
+
+    if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado()) {
+        return;
+    }
+
+    try {
+        const { data, error } = await window.ToxichatDB.cliente.rpc('obtener_mis_amigos');
+        if (error) {
+            console.error("[Chats] Error al cargar mis amigos:", error.message);
+            return;
+        }
+
+        listaChats.innerHTML = "";
+
+        if (!data || data.length === 0) {
+            listaChats.innerHTML = '<p style="color: #666; padding: 15px; font-size: 13px;">No tienes chats activos aún. ¡Agrega un amigo!</p>';
+            return;
+        }
+
+        data.forEach(amigo => {
+            const div = document.createElement("div");
+            div.className = "chat-item";
+            div.id = `chat-${amigo.nombre_usuario}`;
+            const nombreMostrar = amigo.alias || amigo.nombre_usuario || amigo.email;
+            const inicial = nombreMostrar.charAt(0).toUpperCase();
+
+            div.onclick = () => abrirChat(amigo.nombre_usuario, nombreMostrar, amigo.email);
+            div.innerHTML = `
+                <div class="avatar">${inicial}</div>
+                <div class="chat-info">
+                    <h4>${nombreMostrar}</h4>
+                    <p>${amigo.email}</p>
+                </div>
+            `;
+            listaChats.appendChild(div);
+        });
+    } catch (error) {
+        console.error("[Chats] Excepción en cargarListaChats:", error);
+    }
+}
+
+async function cargarSolicitudesPendientes() {
+    const listaSolicitudes = document.getElementById("lista-solicitudes");
+    if (!listaSolicitudes) return;
+
+    if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado()) {
+        return;
+    }
+
+    try {
+        const { data, error } = await window.ToxichatDB.cliente.rpc('obtener_solicitudes_pendientes');
+        if (error) {
+            console.error("[Solicitudes] Error al obtener solicitudes pendientes:", error.message);
+            return;
+        }
+
+        listaSolicitudes.innerHTML = "";
+
+        if (!data || data.length === 0) {
+            listaSolicitudes.innerHTML = '<p style="color: #666; font-size: 13px;">No tienes solicitudes pendientes.</p>';
+            return;
+        }
+
+        data.forEach(sol => {
+            const div = document.createElement("div");
+            div.className = "solicitud-item";
+            div.id = `solicitud-${sol.solicitud_id}`;
+            const nombreMostrar = sol.alias || sol.email;
+
+            div.innerHTML = `
+                <span>🎭 ${nombreMostrar}</span>
+                <div>
+                    <button class="btn-aceptar" onclick="aceptarAmigo('${sol.solicitud_id}', '${nombreMostrar}', '${sol.email}')">Aceptar</button>
+                    <button class="btn-rechazar" onclick="rechazarSolicitud('${sol.solicitud_id}', 'solicitud-${sol.solicitud_id}')">Rechazar</button>
+                </div>
+            `;
+            listaSolicitudes.appendChild(div);
+        });
+    } catch (error) {
+        console.error("[Solicitudes] Excepción en cargarSolicitudesPendientes:", error);
+    }
+}
+
+async function cargarDatosIniciales() {
+    await cargarGrafoSocial();
+    await cargarListaChats();
+    await cargarSolicitudesPendientes();
+    actualizarListaAmigos();
 }
 
 function esAmigoEnGrafo(remitenteId) {
@@ -103,9 +209,6 @@ function mostrarAppAutenticada(sesion) {
         rsa_n: sesion.rsa_n,
     };
 
-    // Al autenticarnos, poblamos el grafo social del usuario
-    cargarGrafoSocial();
-
     document.getElementById("pantalla-login").style.display = "none";
     document.getElementById("pantalla-app").style.display = "flex"; // Ahora es flex para el sidebar
 
@@ -118,7 +221,9 @@ function mostrarAppAutenticada(sesion) {
     if (window.socialGraph && usuarioActual.id) {
         window.socialGraph.addNode(usuarioActual.id);
     }
-    actualizarListaAmigos();
+
+    // Al autenticarnos, cargamos datos reales de BD (Grafo, Chats, Solicitudes)
+    cargarDatosIniciales();
 }
 
 async function iniciarSesion() {
