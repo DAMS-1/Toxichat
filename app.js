@@ -35,6 +35,10 @@ function obtenerPilaChat(idChat) {
     return pilasPorChat[idChat];
 }
 
+// Referencia al canal Realtime activo (para desuscribirse al cerrar sesion)
+let canalMensajes = null;
+let canalSolicitudes = null;
+
 // --- MÓDULO DE DIEGO (GRAFO SOCIAL) ---
 window.socialGraph = window.Graph ? new window.Graph() : null;
 
@@ -102,6 +106,7 @@ async function cargarListaChats() {
                     <h4>${nombreMostrar}</h4>
                     <p>${amigo.email}</p>
                 </div>
+                <span class="badge-no-leido" id="badge-${amigo.nombre_usuario}">0</span>
             `;
             listaChats.appendChild(div);
         });
@@ -207,10 +212,11 @@ function mostrarAppAutenticada(sesion) {
         uuid: sesion.id,
         rsa_e: sesion.rsa_e,
         rsa_n: sesion.rsa_n,
+        contactoClavePub: null, // clave publica del chat activo
     };
 
     document.getElementById("pantalla-login").style.display = "none";
-    document.getElementById("pantalla-app").style.display = "flex"; // Ahora es flex para el sidebar
+    document.getElementById("pantalla-app").style.display = "flex";
 
     const etiqueta = document.getElementById("nombre-usuario-activo");
     if (etiqueta) etiqueta.textContent = usuarioActual.nombre;
@@ -222,8 +228,9 @@ function mostrarAppAutenticada(sesion) {
         window.socialGraph.addNode(usuarioActual.id);
     }
 
-    // Al autenticarnos, cargamos datos reales de BD (Grafo, Chats, Solicitudes)
     cargarDatosIniciales();
+    suscribirseAMensajes();
+    suscribirseASolicitudes();
 }
 
 async function iniciarSesion() {
@@ -245,21 +252,27 @@ async function iniciarSesion() {
     }
 }
 async function cerrarSesionApp() {
-    // 1. Limpiar los datos del usuario actual en memoria
+    // Desuscribirse del canal Realtime antes de limpiar
+    if (canalMensajes && window.ToxichatDB && window.ToxichatDB.cliente) {
+        await window.ToxichatDB.cliente.removeChannel(canalMensajes);
+        canalMensajes = null;
+    }
+    if (canalSolicitudes && window.ToxichatDB && window.ToxichatDB.cliente) {
+        await window.ToxichatDB.cliente.removeChannel(canalSolicitudes);
+        canalSolicitudes = null;
+    }
+
     usuarioActual = null;
 
-    // 2. Ocultar la aplicación y mostrar el login nuevamente
     document.getElementById("pantalla-app").style.display = "none";
     document.getElementById("pantalla-login").style.display = "block";
 
-    // 3. Limpiar los campos de texto del formulario de login
     document.getElementById("email-input").value = "";
     document.getElementById("password-input").value = "";
 
     const mensaje = document.getElementById("auth-mensaje");
-    if (mensaje) mensaje.textContent = "Sesión cerrada correctamente.";
+    if (mensaje) mensaje.textContent = "Sesion cerrada correctamente.";
 
-    // 4. Conectar con el módulo de Supabase de Santi para cerrar la sesión en el backend (si existe)
     if (window.ToxichatAuth && typeof window.ToxichatAuth.cerrarSesion === "function") {
         await window.ToxichatAuth.cerrarSesion();
     }
@@ -293,34 +306,34 @@ async function registrarCuenta() {
 
 async function enviarMensaje() {
     const destinatario = document.getElementById("destinatario-input").value;
-    const texto = document.getElementById("mensaje-input").value;
+    const inputEl = document.getElementById("mensaje-input");
+    const texto = inputEl ? inputEl.value.trim() : "";
     const correoDestino = document.getElementById("correo-amigo-actual").value;
 
-    if (!destinatario || !texto) {
-        alert("Por favor, llena el destinatario y el mensaje.");
+    if (!destinatario || !texto) return;
+
+    const rutaValida = validarRuta_DIEGO(usuarioActual.id, destinatario);
+    if (!rutaValida) {
+        mostrarMensajeUI("No tienes conexion en el grafo con este usuario.", "error");
         return;
     }
 
-    // 1. Validar conexión usando el módulo de Diego
-    const rutaValida = validarRuta_DIEGO(usuarioActual.id, destinatario);
+    const btnEnviar = document.querySelector("#vista-chat-individual button[onclick='enviarMensaje()']");
+    if (btnEnviar) { btnEnviar.disabled = true; btnEnviar.textContent = "Enviando..."; }
 
-    if (rutaValida) {
-        // 2. Cifrar y guardar (Santi: RSA + Supabase)
-        const guardadoExitoso = await enviarMensajeDB_SANTI(
-            usuarioActual.id,
-            destinatario,
-            texto,
-            correoDestino
-        );
+    const guardadoExitoso = await enviarMensajeDB_SANTI(
+        usuarioActual.id,
+        destinatario,
+        texto,
+        correoDestino
+    );
 
-        if (guardadoExitoso) {
-            const pila = obtenerPilaChat(destinatario);
-            pila.push({ remitente: "Yo", texto: texto });
-            pila.actualizarDOM();
-            document.getElementById("mensaje-input").value = "";
-        }
-    } else {
-        alert("No tienes conexión en el grafo con este usuario (Costo: Infinity).");
+    if (btnEnviar) { btnEnviar.disabled = false; btnEnviar.textContent = "Enviar"; }
+
+    if (guardadoExitoso) {
+        const pila = obtenerPilaChat(destinatario);
+        renderizarMensaje(pila, "Yo", texto, true);
+        if (inputEl) inputEl.value = "";
     }
 }
 
@@ -396,17 +409,29 @@ function validarRuta_DIEGO(origenId, destinoId) {
 async function enviarMensajeDB_SANTI(remitenteId, destinatarioId, mensajePlano, emailDestino) {
     try {
         if (!window.ToxichatCrypto || typeof window.ToxichatCrypto.cifrarTexto !== "function") {
-            console.error("[Santi] ToxichatCrypto no está disponible.");
+            console.error("[Crypto] ToxichatCrypto no esta disponible.");
             return false;
         }
         if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado()) {
-            console.warn("[Santi] Supabase no configurado; solo se muestra en UI local.");
+            console.warn("[DB] Supabase no configurado.");
             return true;
         }
 
-        const bloques = window.ToxichatCrypto.cifrarTexto(mensajePlano);
-        const contenidoCifrado = JSON.stringify(bloques.map(String));
         const destino = emailDestino || destinatarioId;
+
+        // E1/E2: Cifrar con la clave publica del destinatario si esta disponible
+        let contenidoCifrado = null;
+        const claveDest = usuarioActual && usuarioActual.contactoClavePub;
+        if (claveDest && claveDest.e && claveDest.n) {
+            try {
+                const bloques = window.ToxichatCrypto.cifrarTexto(mensajePlano, claveDest);
+                contenidoCifrado = JSON.stringify(bloques.map(String));
+            } catch (eCipher) {
+                console.warn("[Crypto] No se pudo cifrar con clave del destinatario:", eCipher.message);
+            }
+        } else {
+            console.warn("[Crypto] Clave publica del destinatario no disponible, enviando sin cifrar.");
+        }
 
         const { error } = await window.ToxichatDB.cliente.rpc("enviar_mensaje", {
             p_email_destino: destino,
@@ -415,16 +440,15 @@ async function enviarMensajeDB_SANTI(remitenteId, destinatarioId, mensajePlano, 
         });
 
         if (error) {
-            console.error("[Santi] Error al guardar mensaje:", error.message);
-            alert("No se pudo guardar el mensaje en la BD: " + error.message);
+            console.error("[DB] Error al guardar mensaje:", error.message);
+            mostrarMensajeUI("No se pudo guardar el mensaje: " + error.message, "error");
             return false;
         }
 
-        console.log(`[Santi] Mensaje cifrado y guardado (${remitenteId} -> ${destino}).`);
         return true;
     } catch (error) {
-        console.error("[Santi] enviarMensajeDB_SANTI:", error);
-        alert(error.message || String(error));
+        console.error("[enviarMensajeDB_SANTI]", error);
+        mostrarMensajeUI(error.message || String(error), "error");
         return false;
     }
 }
@@ -456,6 +480,11 @@ function cambiarVista(idVistaActiva, idBotonActivo) {
         document.getElementById("nav-social").classList.remove("activo");
         document.getElementById(idBotonActivo).classList.add("activo");
     }
+
+    // Dibujar grafo si se abre la vista social
+    if (idVistaActiva === "vista-social") {
+        dibujarGrafoUI();
+    }
 }
 
 /** Funcionalidad para agregar un nuevo amigo */
@@ -480,16 +509,121 @@ async function agregarAmigo() {
     }
 }
 
-/** Abre la vista individual de un chat específico */
-function abrirChat(amigoId, alias, correo) {
+/** D1: Descifra un bloque cifrado RSA usando la clave privada local. */
+function descifrarMensajeLocal(contenidoCifradoStr) {
+    try {
+        if (!window.ToxichatCrypto) return "[cifrado]";
+        const bloques = JSON.parse(contenidoCifradoStr).map(BigInt);
+        return window.ToxichatCrypto.descifrarTexto(bloques);
+    } catch (_) {
+        return "[cifrado]";
+    }
+}
+
+/** M3: Renderiza un mensaje en la pila y el DOM. */
+function renderizarMensaje(pila, remitente, texto, esMio) {
+    pila.push({ remitente, texto });
+
+    const panel = document.getElementById("panel-mensajes");
+    if (!panel) return;
+
+    const div = document.createElement("div");
+    div.className = "mensaje-item" + (esMio ? " mio" : "");
+    div.textContent = esMio ? texto : `${remitente}: ${texto}`;
+    // panel-mensajes es column-reverse, insertamos al principio = aparece abajo
+    panel.insertBefore(div, panel.firstChild);
+    panel.scrollTop = 0; // N1: Asegurar scroll al fondo
+}
+
+/** M2: Carga el historial de mensajes desde la BD para el chat abierto. */
+async function cargarHistorialChat(correoAmigo) {
+    const panel = document.getElementById("panel-mensajes");
+    if (!panel) return;
+    panel.innerHTML = "<p style='color:#555; font-size:12px; text-align:center;'>Cargando historial...</p>";
+
+    if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado()) {
+        panel.innerHTML = "";
+        return;
+    }
+
+    try {
+        const { data, error } = await window.ToxichatDB.cliente.rpc("obtener_conversacion", {
+            p_email_otro: correoAmigo
+        });
+
+        panel.innerHTML = "";
+
+        if (error) {
+            console.error("[Historial] Error:", error.message);
+            return;
+        }
+
+        if (!data || data.length === 0) return;
+
+        const amigoId = document.getElementById("destinatario-input").value;
+        const pila = obtenerPilaChat(amigoId);
+        pila.elementos = []; // limpiar pila antes de recargar
+
+        // Los mensajes vienen en orden ascendente; renderizamos desde el mas antiguo
+        data.forEach(msg => {
+            const esMio = msg.remitente_id === (usuarioActual && usuarioActual.uuid);
+            let texto;
+            if (msg.contenido_cifrado) {
+                texto = descifrarMensajeLocal(msg.contenido_cifrado);
+            } else {
+                texto = msg.contenido;
+            }
+            const remitente = esMio ? "Yo" : correoAmigo;
+            renderizarMensaje(pila, remitente, texto, esMio);
+        });
+    } catch (err) {
+        console.error("[Historial] Excepcion:", err);
+        panel.innerHTML = "";
+    }
+}
+
+/** M1: Abre la vista individual de un chat y carga su historial. */
+async function abrirChat(amigoId, alias, correo) {
     document.getElementById("destinatario-input").value = amigoId;
     document.getElementById("correo-amigo-actual").value = correo;
     document.getElementById("chat-actual-alias").innerText = obtenerAliasLocal(correo, alias || correo);
 
-    const pila = obtenerPilaChat(amigoId);
-    pila.actualizarDOM();
+    // Resetear la pila local para este chat
+    pilasPorChat[amigoId] = new PilaMensajes();
 
     cambiarVista("vista-chat-individual", null);
+
+    // E1: Cargar clave publica RSA del destinatario desde la BD
+    if (usuarioActual) {
+        usuarioActual.contactoClavePub = null;
+        if (window.ToxichatDB && window.ToxichatDB.estaConfigurado()) {
+            try {
+                const { data: perfData } = await window.ToxichatDB.cliente
+                    .from("perfiles")
+                    .select("rsa_e, rsa_n")
+                    .eq("email", correo)
+                    .single();
+                if (perfData && perfData.rsa_e && perfData.rsa_n) {
+                    usuarioActual.contactoClavePub = {
+                        e: BigInt(perfData.rsa_e),
+                        n: BigInt(perfData.rsa_n)
+                    };
+                }
+            } catch (_) {
+                console.warn("[E1] No se pudo cargar la clave publica del destinatario.");
+            }
+        }
+    }
+
+    // M2: Cargar historial desde BD
+    await cargarHistorialChat(correo);
+
+    // N2: Resetear el badge de mensajes no leídos
+    const badge = document.getElementById("badge-" + amigoId);
+    if (badge) {
+        badge.textContent = "0";
+        badge.style.display = "none";
+    }
 }
 
 /** Retorna a la lista principal de chats */
@@ -656,6 +790,184 @@ async function eliminarAmigo(nombreUsuario) {
     }
 }
 
+// R1: Suscripcion a mensajes entrantes via Supabase Realtime
+function suscribirseAMensajes() {
+    if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado() || !usuarioActual) return;
+
+    // Evitar suscripciones duplicadas
+    if (canalMensajes) {
+        window.ToxichatDB.cliente.removeChannel(canalMensajes);
+    }
+
+    canalMensajes = window.ToxichatDB.cliente
+        .channel("mensajes-entrantes")
+        .on("postgres_changes", {
+            event: "INSERT",
+            schema: "public",
+            table: "mensajes",
+            filter: `destinatario_id=eq.${usuarioActual.uuid}`
+        }, manejarMensajeEntrante)
+        .subscribe();
+}
+
+// R2: Manejar un mensaje entrante en tiempo real
+function manejarMensajeEntrante(payload) {
+    const msg = payload.new;
+    if (!msg || !usuarioActual) return;
+
+    const remitenteId = msg.remitente_id;
+
+    // Filtrar por grafo: solo aceptar de amigos
+    if (!esAmigoEnGrafo(remitenteId)) {
+        console.warn("[Realtime] Mensaje ignorado de no-amigo:", remitenteId);
+        return;
+    }
+
+    let texto;
+    if (msg.contenido_cifrado) {
+        texto = descifrarMensajeLocal(msg.contenido_cifrado);
+    } else {
+        texto = msg.contenido;
+    }
+
+    // Buscar el correo/alias del remitente en la lista de chats del DOM
+    const chatEl = document.getElementById("chat-" + remitenteId);
+    const remitente = chatEl ? chatEl.querySelector("h4").textContent : remitenteId;
+
+    // Encontrar el amigoId (nombre_usuario) para la pila
+    const pila = obtenerPilaChat(remitenteId);
+
+    // Si el chat activo es del remitente, mostrar en DOM
+    const chatActivoId = document.getElementById("destinatario-input").value;
+    if (chatActivoId === remitenteId) {
+        renderizarMensaje(pila, remitente, texto, false);
+    } else {
+        pila.push({ remitente, texto });
+
+        // N2: Incrementar badge de no leídos
+        const badge = document.getElementById("badge-" + remitenteId);
+        if (badge) {
+            let num = parseInt(badge.textContent) || 0;
+            badge.textContent = num + 1;
+            badge.style.display = "inline-block";
+        }
+    }
+}
+
+// S1: Suscripcion a solicitudes entrantes
+function suscribirseASolicitudes() {
+    if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado() || !usuarioActual) return;
+
+    if (canalSolicitudes) {
+        window.ToxichatDB.cliente.removeChannel(canalSolicitudes);
+    }
+
+    canalSolicitudes = window.ToxichatDB.cliente
+        .channel("solicitudes-entrantes")
+        .on("postgres_changes", {
+            event: "INSERT",
+            schema: "public",
+            table: "solicitudes_amistad",
+            filter: `para_usuario_id=eq.${usuarioActual.uuid}`
+        }, (payload) => {
+            console.log("[Realtime] Nueva solicitud recibida");
+            cargarSolicitudesPendientes(); // Recargar la lista de solicitudes visualmente
+        })
+        .subscribe();
+}
+
+/** DIBUJAR EL GRAFO SOCIAL EN EL CANVAS */
+function dibujarGrafoUI() {
+    const canvas = document.getElementById("grafo-canvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const width = canvas.width;
+    const height = canvas.height;
+
+    ctx.clearRect(0, 0, width, height);
+
+    if (!window.socialGraph || Object.keys(window.socialGraph.nodes).length === 0) {
+        ctx.fillStyle = "#aaa";
+        ctx.font = "14px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("El grafo esta vacio o no se ha cargado.", width / 2, height / 2);
+        return;
+    }
+
+    const nodes = Object.keys(window.socialGraph.nodes);
+    const positions = {};
+
+    // Asignar posiciones: el usuarioActual al centro, el resto en un circulo
+    const cx = width / 2;
+    const cy = height / 2;
+    const radius = Math.min(cx, cy) - 50;
+
+    let idx = 0;
+    const numAmigos = nodes.length > 1 ? nodes.length - 1 : 1;
+
+    nodes.forEach(node => {
+        if (usuarioActual && node === usuarioActual.id) {
+            positions[node] = { x: cx, y: cy };
+        } else {
+            const angle = (idx / numAmigos) * 2 * Math.PI;
+            positions[node] = {
+                x: cx + radius * Math.cos(angle),
+                y: cy + radius * Math.sin(angle)
+            };
+            idx++;
+        }
+    });
+
+    // Dibujar aristas (líneas)
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(138, 43, 226, 0.5)"; // Morado toxico
+
+    const drawnEdges = new Set();
+
+    nodes.forEach(u => {
+        const neighbors = window.socialGraph.nodes[u];
+        for (let v in neighbors) {
+            const edgeId = [u, v].sort().join("-");
+            if (drawnEdges.has(edgeId)) continue;
+            drawnEdges.add(edgeId);
+
+            if (positions[u] && positions[v]) {
+                ctx.beginPath();
+                ctx.moveTo(positions[u].x, positions[u].y);
+                ctx.lineTo(positions[v].x, positions[v].y);
+                ctx.stroke();
+
+                // Escribir el peso
+                const weight = neighbors[v].toFixed(1);
+                const mx = (positions[u].x + positions[v].x) / 2;
+                const my = (positions[u].y + positions[v].y) / 2;
+                ctx.fillStyle = "#fff";
+                ctx.font = "12px sans-serif";
+                ctx.fillText(weight, mx, my);
+            }
+        }
+    });
+
+    // Dibujar nodos (círculos)
+    nodes.forEach(node => {
+        const { x, y } = positions[node];
+        ctx.beginPath();
+        ctx.arc(x, y, 20, 0, 2 * Math.PI);
+        const isMe = (usuarioActual && node === usuarioActual.id);
+        ctx.fillStyle = isMe ? "#39ff14" : "#8a2be2";
+        ctx.fill();
+        ctx.strokeStyle = "#fff";
+        ctx.stroke();
+
+        ctx.fillStyle = isMe ? "#000" : "#fff";
+        ctx.font = "12px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        // Mostrar inicial o las primeras letras
+        ctx.fillText(node.substring(0, 3).toUpperCase(), x, y);
+    });
+}
+
 async function intentarRestaurarSesion() {
     if (!window.ToxichatAuth || typeof window.ToxichatAuth.obtenerSesion !== "function") return;
     try {
@@ -664,10 +976,20 @@ async function intentarRestaurarSesion() {
             mostrarAppAutenticada(sesion);
         }
     } catch (error) {
-        console.warn("Error al intentar restaurar sesión:", error);
+        console.warn("Error al intentar restaurar sesion:", error);
     }
 }
 
 document.addEventListener("DOMContentLoaded", function () {
+    // E6: listener Enter para enviar mensaje
+    const inputMensaje = document.getElementById("mensaje-input");
+    if (inputMensaje) {
+        inputMensaje.addEventListener("keydown", function (e) {
+            if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                enviarMensaje();
+            }
+        });
+    }
     intentarRestaurarSesion();
 });

@@ -213,6 +213,43 @@ function demostrar() {
   console.log("Texto descifrado:", recuperado);
 }
 
+const CLAVE_PRIVADA_LS_KEY = "toxichat_rsa_privada";
+
+/** Exporta la clave privada como objeto de strings (para localStorage). */
+function exportarClavePrivada(clavePrivada = CLAVE_PRIVADA) {
+  return { d: String(clavePrivada.d), n: String(clavePrivada.n) };
+}
+
+/** Importa y sobreescribe CLAVE_PRIVADA desde strings guardados. */
+function importarClavePrivada(dStr, nStr) {
+  CLAVE_PRIVADA.d = BigInt(dStr);
+  CLAVE_PRIVADA.n = BigInt(nStr);
+}
+
+/**
+ * Inicializa las claves RSA: restaura la privada desde localStorage si existe,
+ * si no, genera un par nuevo y guarda la privada.
+ */
+function inicializarClaves() {
+  const guardada = localStorage.getItem(CLAVE_PRIVADA_LS_KEY);
+  if (guardada) {
+    try {
+      const { d, n } = JSON.parse(guardada);
+      importarClavePrivada(d, n);
+      return;
+    } catch (_) {
+      // clave corrupta, regenerar
+    }
+  }
+  // Generar nueva y persistir
+  localStorage.setItem(CLAVE_PRIVADA_LS_KEY, JSON.stringify(exportarClavePrivada(CLAVE_PRIVADA)));
+}
+
+// Solo persistir si estamos en el navegador (no en Node)
+if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+  inicializarClaves();
+}
+
 /** Serializa la clave pública para guardarla en perfiles (Supabase). */
 function clavePublicaParaBd(clavePublica = CLAVE_PUBLICA) {
   return {
@@ -239,6 +276,8 @@ const apiCrypto = {
   cifrarTexto,
   descifrarTexto,
   clavePublicaParaBd,
+  exportarClavePrivada,
+  importarClavePrivada,
 };
 
 // Solo corre la demo al ejecutar el archivo con Node directamente
