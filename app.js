@@ -1048,6 +1048,126 @@ async function intentarRestaurarSesion() {
     }
 }
 
+// =========================================================
+// --- TOXIPREGUNTAS (Generador de Conversación) ---
+// =========================================================
+
+const preguntasPareja = [
+    "Si tu pareja cambiara de cuerpo con tu ex, ¿con quién te quedarías?",
+    "Si estuvieras en un cuarto con 100 mujeres, ¿reconocerías la voz de tu novia con los ojos cerrados?",
+    "Si tu novia aparentemente muere, haces tu luto y te casas, y 10 años después aparece viva, ¿volverías con ella abandonando a tu actual esposa?",
+    "¿Preferirías que tu pareja revise tu celular una vez al día o que tu ex tenga acceso ilimitado a tu ubicación en tiempo real?",
+    "Si te ofrecen un millón de dólares pero tu pareja se entera de tu mentira más grande, ¿aceptas?",
+    "¿Preferirías que tu pareja pase una noche con su celebridad favorita o que tú pases una semana de vacaciones con tu ex?",
+    "Si tu pareja y tu madre están colgando de un acantilado y solo puedes salvar a una, ¿a quién salvas?",
+    "¿Preferirías descubrir que tu pareja fue infiel una vez en el pasado o serle infiel tú sin que nunca se entere?",
+    "Si pudieras leer la mente de tu pareja por un día pero eso revelara lo que realmente piensa de tus amigos, ¿lo harías?",
+    "¿Preferirías que tu pareja hable con su ex todos los días amistosamente o que no tenga amigos y dependa 100% de ti?",
+    "Si pudieras saber la fecha exacta en la que tu pareja te dejará de amar a cambio de 5 años de felicidad perfecta, ¿aceptarías?",
+    "¿Preferirías que tu pareja gane el triple que tú pero te controle los gastos, o ganar tú el triple pero mantenerla por completo?",
+    "Si tu pareja te pide borrar a tu mejor amigo/a de toda la vida porque le da inseguridad, ¿lo haces?",
+    "¿Preferirías que tu pareja huela mal todo el tiempo pero sea súper fiel, o que huela delicioso pero coquetee constantemente?",
+    "Si tu pareja te confiesa que le parece más atractivo/a tu hermano/a o mejor amigo/a, ¿terminas la relación?",
+    "¿Preferirías que tu pareja te oculte que tiene un hijo de una relación pasada o que te oculte que tiene una deuda masiva?",
+    "Si tu pareja y tú se separan temporalmente por un mes, ¿es infidelidad si sale con alguien más esa misma semana?",
+    "¿Preferirías que tu pareja sea extremadamente celosa pero te dedique todo su tiempo, o que sea cero celosa y casi nunca te busque?",
+    "Si pudieras cambiar un rasgo físico de tu pareja sin que ella se entere, ¿lo harías?",
+    "¿Preferirías pasar el resto de tu vida con alguien a quien amas pero que no te ama del todo, o con alguien que te adora pero a quien tú no amas?"
+];
+
+const preguntasAmigos = [
+    "Si tu mejor amigo te pide mentirle a su pareja para encubrir una infidelidad, ¿lo harías?",
+    "Si te ofrecen $10,000 dólares por no hablarle a tu mejor amigo por un año completo, ¿aceptas?",
+    "Si tu mejor amigo y tú se enamoran de la misma persona, ¿te retirarías o competirías por ella?",
+    "¿Preferirías descubrir que tu mejor amigo habla mal de ti a tus espaldas o hablar mal de él para defender tu reputación?",
+    "Si tu mejor amigo comete un crimen menor y la policía te interroga, ¿lo encubres o dices la verdad?",
+    "¿Preferirías que tu mejor amigo se vuelva extremadamente exitoso y te olvide, o que sea un fracasado pero dependa siempre de ti?",
+    "Si tu pareja te dice que no soporta a tu mejor amigo y te pide elegir, ¿con quién te quedas?",
+    "Si tu mejor amigo empieza a salir con tu ex poco tiempo después de terminar, ¿le dejas de hablar?",
+    "¿Preferirías que tu mejor amigo te deba mucho dinero y no te pague, o deberle tú a él y no poder pagarle?",
+    "Si pudieras saber el secreto más oscuro de tu mejor amigo pero a cambio él sabrá el tuyo, ¿aceptas?",
+    "¿Preferirías que tu mejor amigo sea súper fiestero y te meta en problemas, o que sea súper aburrido y nunca quiera salir?",
+    "Si tu mejor amigo te critica de frente pero te duele mucho, ¿valoras su honestidad o te distancias?",
+    "¿Preferirías que tu mejor amigo se mude al otro lado del mundo para cumplir su sueño o que se quede cerca pero frustrado?",
+    "Si tu mejor amigo se vuelve amigo íntimo de la persona que peor te cae, ¿te molestaría?",
+    "¿Preferirías que tu mejor amigo te cancele un plan a última hora por una cita o cancelar tú por la misma razón?",
+    "Si tu mejor amigo tiene mal aliento o mal olor, ¿se lo dirías tú directamente?",
+    "¿Preferirías que tu mejor amigo sea millonario y nunca te invite nada, o que sea pobre y tú tengas que pagar siempre?",
+    "Si tu mejor amigo te confiesa que le gusta tu pareja actual, ¿cómo reaccionarías?",
+    "¿Preferirías tener un solo mejor amigo que daría la vida por ti o tener 20 amigos divertidos pero superficiales?",
+    "Si tu mejor amigo te copia el estilo, los gustos y la personalidad, ¿lo verías como un cumplido o te alejarías?"
+];
+
+let toxiCatActual = '';
+let toxiIndiceActual = 0;
+
+function toggleToxiPreguntas() {
+    const modal = document.getElementById("toxipreguntas-modal");
+    if (modal.classList.contains("visible")) {
+        cerrarToxiPreguntas();
+    } else {
+        modal.classList.add("visible");
+        if (!toxiCatActual) {
+            document.getElementById("toxipreguntas-pregunta").innerText = "Selecciona una categoría arriba para empezar...";
+            document.getElementById("toxipreguntas-progreso").innerText = "";
+        }
+    }
+}
+
+function cerrarToxiPreguntas() {
+    document.getElementById("toxipreguntas-modal").classList.remove("visible");
+}
+
+function seleccionarCategoriaToxi(cat) {
+    toxiCatActual = cat;
+    toxiIndiceActual = 0;
+    
+    // Actualizar botones
+    document.getElementById("btn-toxi-amigos").classList.remove("activo");
+    document.getElementById("btn-toxi-pareja").classList.remove("activo");
+    document.getElementById(`btn-toxi-${cat}`).classList.add("activo");
+
+    mostrarToxiPregunta();
+}
+
+function mostrarToxiPregunta() {
+    const arreglo = toxiCatActual === 'amigos' ? preguntasAmigos : preguntasPareja;
+    if (arreglo.length === 0) return;
+    
+    document.getElementById("toxipreguntas-pregunta").innerText = arreglo[toxiIndiceActual];
+    document.getElementById("toxipreguntas-progreso").innerText = `Pregunta ${toxiIndiceActual + 1} de ${arreglo.length}`;
+}
+
+function siguienteToxiPregunta() {
+    if (!toxiCatActual) {
+        alert("Primero selecciona si es para Amigos o Pareja.");
+        return;
+    }
+    const arreglo = toxiCatActual === 'amigos' ? preguntasAmigos : preguntasPareja;
+    toxiIndiceActual++;
+    
+    if (toxiIndiceActual >= arreglo.length) {
+        toxiIndiceActual = 0; // Volver a empezar
+    }
+    
+    mostrarToxiPregunta();
+}
+
+function anteriorToxiPregunta() {
+    if (!toxiCatActual) {
+        alert("Primero selecciona si es para Amigos o Pareja.");
+        return;
+    }
+    const arreglo = toxiCatActual === 'amigos' ? preguntasAmigos : preguntasPareja;
+    toxiIndiceActual--;
+    
+    if (toxiIndiceActual < 0) {
+        toxiIndiceActual = arreglo.length - 1; // Volver al final
+    }
+    
+    mostrarToxiPregunta();
+}
+
 document.addEventListener("DOMContentLoaded", function () {
     // E6: listener Enter para enviar mensaje
     const inputMensaje = document.getElementById("mensaje-input");
