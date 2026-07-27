@@ -472,6 +472,66 @@
             color: #ff3333;
             text-shadow: 0 0 10px rgba(255, 51, 51, 0.5);
         }
+
+        /* ToxiPreguntas Popover */
+        #toxipreguntas-modal {
+            position: absolute;
+            bottom: 80px;
+            left: 20px;
+            width: 320px;
+            background: #111;
+            border: 2px solid #8a2be2;
+            border-radius: 12px;
+            box-shadow: 0 0 20px rgba(138,43,226,0.5);
+            padding: 20px;
+            z-index: 100;
+            display: none;
+            flex-direction: column;
+            gap: 15px;
+        }
+        #toxipreguntas-modal.visible {
+            display: flex;
+        }
+        .toxipreguntas-close {
+            position: absolute;
+            top: 5px;
+            right: 10px;
+            color: #555;
+            cursor: pointer;
+            font-size: 20px;
+            transition: 0.3s;
+        }
+        .toxipreguntas-close:hover {
+            color: #ff3333;
+            text-shadow: 0 0 8px rgba(255,51,51,0.6);
+        }
+        .toxipreguntas-tabs {
+            display: flex;
+            gap: 10px;
+        }
+        .toxipreguntas-tabs button {
+            flex: 1;
+            padding: 8px;
+            font-size: 13px;
+            background: #222;
+        }
+        .toxipreguntas-tabs button.activo {
+            background: #8a2be2;
+        }
+        .toxipreguntas-card {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+            min-height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            color: #fff;
+            box-shadow: inset 0 0 10px rgba(57,255,20,0.1);
+        }
     </style>
 </head>
 
@@ -529,7 +589,24 @@
                     <button onclick="cambiarAlias()">✏️</button>
                 </div>
 
-                <div id="chat-container-interno">
+                <div id="chat-container-interno" style="position: relative;">
+                    <!-- ToxiPreguntas Popover -->
+                    <div id="toxipreguntas-modal">
+                        <span class="toxipreguntas-close" onclick="cerrarToxiPreguntas()">✖</span>
+                        <h4 style="margin: 0; color: #39ff14; text-align: center;">ToxiPreguntas 👾</h4>
+                        <div class="toxipreguntas-tabs">
+                            <button id="btn-toxi-amigos" onclick="seleccionarCategoriaToxi('amigos')">Amigos 👥</button>
+                            <button id="btn-toxi-pareja" onclick="seleccionarCategoriaToxi('pareja')">Pareja 💔</button>
+                        </div>
+                        <div id="toxipreguntas-pregunta" class="toxipreguntas-card">
+                            Selecciona una categoría arriba para empezar...
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <button onclick="anteriorToxiPregunta()" style="width: auto; padding: 6px 10px; font-size: 12px; background: #222; color: #fff; border: 1px solid #444;">⬅️ Anterior</button>
+                            <span id="toxipreguntas-progreso" style="font-size: 12px; color: #888;"></span>
+                            <button onclick="siguienteToxiPregunta()" style="width: auto; padding: 6px 10px; font-size: 12px; background: #39ff14; color: #000;">Siguiente ➡️</button>
+                        </div>
+                    </div>
                     <!-- Aquí se dibujan los mensajes de la Pila -->
                     <div id="panel-mensajes"></div>
                     <hr style="border-color: #333; margin: 15px 0;">
@@ -537,6 +614,7 @@
                     <input type="hidden" id="destinatario-input">
                     <input type="hidden" id="correo-amigo-actual">
                     <div style="display: flex; gap: 10px;">
+                        <button onclick="toggleToxiPreguntas()" title="Generar ToxiPreguntas" style="width: auto; background: #8a2be2; font-size: 18px; padding: 0 15px;">👾</button>
                         <input type="text" id="mensaje-input" class="input-form" style="margin-bottom: 0;"
                             placeholder="Escribe tu mensaje...">
                         <button onclick="enviarMensaje()"
