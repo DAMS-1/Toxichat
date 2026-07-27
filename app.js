@@ -322,6 +322,7 @@ async function registrarCuenta() {
 }
 
 async function enviarMensaje() {
+    console.log("[enviarMensaje] Iniciando envio de mensaje...");
     const destinatario = document.getElementById("destinatario-input").value;
     const inputEl = document.getElementById("mensaje-input");
     const texto = inputEl ? inputEl.value.trim() : "";
@@ -424,6 +425,7 @@ function validarRuta_DIEGO(origenId, destinoId) {
  * @returns {Promise<boolean>}
  */
 async function enviarMensajeDB_SANTI(remitenteId, destinatarioId, mensajePlano, emailDestino) {
+    console.log("[enviarMensajeDB_SANTI] Preparando envio de mensaje a BD. destinatarioId:", destinatarioId);
     try {
         if (!window.ToxichatCrypto || typeof window.ToxichatCrypto.cifrarTexto !== "function") {
             console.error("[Crypto] ToxichatCrypto no esta disponible.");
@@ -455,6 +457,8 @@ async function enviarMensajeDB_SANTI(remitenteId, destinatarioId, mensajePlano, 
             p_contenido: mensajePlano,
             p_contenido_cifrado: contenidoCifrado,
         });
+        
+        console.log("[enviarMensajeDB_SANTI] Resultado RPC enviar_mensaje. error:", error);
 
         if (error) {
             console.error("[DB] Error al guardar mensaje:", error.message);
@@ -838,28 +842,43 @@ async function eliminarAmigo(nombreUsuario) {
 
 // R1: Suscripcion a mensajes entrantes via Supabase Realtime
 function suscribirseAMensajes() {
-    if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado() || !usuarioActual) return;
+    console.log("[suscribirseAMensajes] Verificando configuracion...");
+    if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado() || !usuarioActual) {
+        console.warn("[suscribirseAMensajes] Cancelado: Falta BD o usuario. usuarioActual:", usuarioActual);
+        return;
+    }
 
     // Evitar suscripciones duplicadas
     if (canalMensajes) {
+        console.log("[suscribirseAMensajes] Eliminando suscripcion previa...");
         window.ToxichatDB.cliente.removeChannel(canalMensajes);
     }
 
+    console.log("[suscribirseAMensajes] Iniciando suscripcion a public.mensajes para UUID:", usuarioActual.uuid);
     canalMensajes = window.ToxichatDB.cliente
-        .channel("mensajes-entrantes")
+        .channel(`mensajes-${usuarioActual.uuid}`)
         .on("postgres_changes", {
             event: "INSERT",
             schema: "public",
-            table: "mensajes",
-            filter: `destinatario_id=eq.${usuarioActual.uuid}`
-        }, manejarMensajeEntrante)
-        .subscribe();
+            table: "mensajes"
+            // filter: `destinatario_id=eq.${usuarioActual.uuid}` // <-- Filtro desactivado para pruebas
+        }, (payload) => {
+            console.log("[Realtime Event] POSTGRES_CHANGES RECIBIDO:", payload);
+            manejarMensajeEntrante(payload);
+        })
+        .subscribe((status) => {
+            console.log("[suscribirseAMensajes] Estado de suscripcion actualizado:", status);
+        });
 }
 
 // R2: Manejar un mensaje entrante en tiempo real
 function manejarMensajeEntrante(payload) {
+    console.log("[manejarMensajeEntrante] Procesando payload:", payload);
     const msg = payload.new;
-    if (!msg || !usuarioActual) return;
+    if (!msg || !usuarioActual) {
+        console.warn("[manejarMensajeEntrante] Faltan datos (msg o usuarioActual)");
+        return;
+    }
 
     const remitenteId = msg.remitente_id;
     const amigo = amigosPorId[remitenteId];

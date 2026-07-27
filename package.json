@@ -1,0 +1,10 @@
+{
+  "name": "toxichat",
+  "version": "1.0.0",
+  "description": "Toxichat - Realtime chat with Supabase",
+  "scripts": {
+    "build": "node build.js",
+    "start": "node servidor.js"
+  },
+  "dependencies": {}
+}
