@@ -41,11 +41,11 @@ window.socialGraph = window.Graph ? new window.Graph() : null;
 async function cargarGrafoSocial() {
     if (!window.socialGraph) return;
     console.log("[Diego] Inicializando Grafo Social y cargando conexiones...");
-    
+
     // Mock de conexiones y usuarios para que Dijkstra funcione
     if (usuarioActual && usuarioActual.id) {
         window.socialGraph.addNode(usuarioActual.id);
-        
+
         // Asignamos una red de prueba:
         window.socialGraph.addEdge(usuarioActual.id, "santi_dev", 99);
         window.socialGraph.addEdge("santi_dev", "lau_ui", 15);
@@ -70,7 +70,7 @@ function recibirMensajeEntrante(remitenteId, remitenteNombre, textoMensaje) {
             remitente: remitenteNombre,
             texto: textoMensaje
         };
-        
+
         // 3. Se añade a la Pila del remitente
         const pila = obtenerPilaChat(remitenteId);
         pila.push(mensajeValido);
@@ -86,13 +86,6 @@ function recibirMensajeEntrante(remitenteId, remitenteNombre, textoMensaje) {
         console.warn(`Mensaje bloqueado de ${remitenteNombre}: No es amigo en el grafo social.`);
     }
 }
-
-// --- PRUEBAS EN CONSOLA ---
-setTimeout(() => {
-    recibirMensajeEntrante("usuario1", "Carlos", "¡Hola Lau, probando la pila de chats!");
-    recibirMensajeEntrante("hacker_malintencionado", "Desconocido", "Spam o ataque de red");
-    recibirMensajeEntrante("santi_dev", "Santi", "Ya quedó lista la base de datos.");
-}, 500);
 
 // =========================================================
 // --- LÓGICA DE INTERFAZ GRÁFICA (LAU) ---
@@ -122,9 +115,9 @@ function mostrarAppAutenticada(sesion) {
     const perfilNombre = document.getElementById("perfil-nombre");
     if (perfilNombre) perfilNombre.value = usuarioActual.nombre;
 
-    // Conectar el usuario actual al grafo con los contactos base
-    socialGraph.addEdge(usuarioActual.id, "santi_dev", 50);
-    socialGraph.addEdge(usuarioActual.id, "amigo_diego", 30);
+    if (window.socialGraph && usuarioActual.id) {
+        window.socialGraph.addNode(usuarioActual.id);
+    }
     actualizarListaAmigos();
 }
 
@@ -157,7 +150,7 @@ async function cerrarSesionApp() {
     // 3. Limpiar los campos de texto del formulario de login
     document.getElementById("email-input").value = "";
     document.getElementById("password-input").value = "";
-    
+
     const mensaje = document.getElementById("auth-mensaje");
     if (mensaje) mensaje.textContent = "Sesión cerrada correctamente.";
 
@@ -352,7 +345,7 @@ function cambiarVista(idVistaActiva, idBotonActivo) {
     document.getElementById(idVistaActiva).classList.add("activa");
 
     // 3. Cambiar estilos de los botones de la barra inferior
-    if(idBotonActivo) {
+    if (idBotonActivo) {
         document.getElementById("nav-chats").classList.remove("activo");
         document.getElementById("nav-perfil").classList.remove("activo");
         document.getElementById("nav-social").classList.remove("activo");
@@ -424,12 +417,12 @@ function cambiarAlias() {
 function abrirModalAmigo() {
     const aliasActual = document.getElementById("chat-actual-alias").innerText;
     const correoActual = document.getElementById("correo-amigo-actual").value;
-    
+
     // Inyectar datos en el modal
     document.getElementById("modal-amigo-nombre").innerText = aliasActual;
     document.getElementById("modal-amigo-correo").innerText = correoActual;
     document.getElementById("modal-amigo-avatar").innerText = aliasActual.charAt(0).toUpperCase();
-    
+
     // Mostrar modal
     document.getElementById("modal-amigo").classList.remove("oculta");
 }
@@ -439,19 +432,18 @@ function cerrarModalAmigo() {
     document.getElementById("modal-amigo").classList.add("oculta");
 }
 
-/** Guardar información de mi perfil */
-function guardarPerfil() {
-    const nuevoNombre = document.getElementById("perfil-nombre").value;
-    const nuevoEstado = document.getElementById("perfil-estado").value;
-    
-    if(nuevoNombre.trim() === "") {
-        alert("El nombre no puede estar vacío.");
+/** Actualiza la lista de amigos en la interfaz de perfil */
+function actualizarListaAmigos() {
+    const contenedor = document.getElementById("lista-amigos-perfil");
+    if (!contenedor) return;
+    contenedor.innerHTML = "";
+
+    if (!usuarioActual || !window.socialGraph || !window.socialGraph.nodes || !window.socialGraph.nodes[usuarioActual.id]) {
+        contenedor.innerHTML = '<p style="color: #666; font-size: 13px;">Aún no tienes amigos agregados.</p>';
         return;
     }
 
-    usuarioActual.nombre = nuevoNombre;
-    contenedor.innerHTML = "";
-    const misConexiones = socialGraph.nodes[usuarioActual.id] || {};
+    const misConexiones = window.socialGraph.nodes[usuarioActual.id] || {};
     const amigosIds = Object.keys(misConexiones);
 
     if (amigosIds.length === 0) {
@@ -471,8 +463,28 @@ function guardarPerfil() {
     });
 }
 
+/** Guardar información de mi perfil */
+function guardarPerfil() {
+    const nuevoNombreInput = document.getElementById("perfil-nombre");
+    if (!nuevoNombreInput) return;
+    const nuevoNombre = nuevoNombreInput.value.trim();
+
+    if (nuevoNombre === "") {
+        alert("El nombre no puede estar vacío.");
+        return;
+    }
+
+    if (usuarioActual) {
+        usuarioActual.nombre = nuevoNombre;
+        const etiqueta = document.getElementById("nombre-usuario-activo");
+        if (etiqueta) etiqueta.textContent = usuarioActual.nombre;
+    }
+
+    actualizarListaAmigos();
+}
+
 function aceptarAmigo(idAmigo, nombre, correo) {
-    if(!usuarioActual) return;
+    if (!usuarioActual) return;
 
     // 1. Añadir al Grafo (peso 100 por defecto)
     socialGraph.addEdge(usuarioActual.id, idAmigo, 100);
@@ -503,11 +515,11 @@ function aceptarAmigo(idAmigo, nombre, correo) {
 
 function rechazarSolicitud(idDOM) {
     const el = document.getElementById(idDOM);
-    if(el) el.remove();
+    if (el) el.remove();
 }
 
 function eliminarAmigo(idAmigo) {
-    if(!usuarioActual || !socialGraph.nodes[usuarioActual.id]) return;
+    if (!usuarioActual || !socialGraph.nodes[usuarioActual.id]) return;
 
     // 1. Quitar conexión del Grafo
     delete socialGraph.nodes[usuarioActual.id][idAmigo];
@@ -517,11 +529,23 @@ function eliminarAmigo(idAmigo) {
 
     // 2. Quitar de la lista de chats
     const chatEl = document.getElementById(`chat-${idAmigo}`);
-    if(chatEl) chatEl.remove();
+    if (chatEl) chatEl.remove();
 
     // 3. Actualizar UI
     actualizarListaAmigos();
     alert(`Amigo ${idAmigo} eliminado. Ya no podrás enviarle mensajes (Costo: Infinity).`);
+}
+
+async function intentarRestaurarSesion() {
+    if (!window.ToxichatAuth || typeof window.ToxichatAuth.obtenerSesion !== "function") return;
+    try {
+        const sesion = await window.ToxichatAuth.obtenerSesion();
+        if (sesion) {
+            mostrarAppAutenticada(sesion);
+        }
+    } catch (error) {
+        console.warn("Error al intentar restaurar sesión:", error);
+    }
 }
 
 document.addEventListener("DOMContentLoaded", function () {
