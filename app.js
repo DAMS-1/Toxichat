@@ -139,7 +139,7 @@ async function cargarSolicitudesPendientes() {
             const nombreMostrar = sol.alias || sol.email;
 
             div.innerHTML = `
-                <span>🎭 ${nombreMostrar}</span>
+                <span>${nombreMostrar}</span>
                 <div>
                     <button class="btn-aceptar" onclick="aceptarAmigo('${sol.solicitud_id}', '${nombreMostrar}', '${sol.email}')">Aceptar</button>
                     <button class="btn-rechazar" onclick="rechazarSolicitud('${sol.solicitud_id}', 'solicitud-${sol.solicitud_id}')">Rechazar</button>
@@ -459,11 +459,24 @@ function cambiarVista(idVistaActiva, idBotonActivo) {
 }
 
 /** Funcionalidad para agregar un nuevo amigo */
-function agregarAmigo() {
-    const correoAmigo = prompt("Ingresa el CORREO ELECTRÓNICO (único) de tu nuevo amigo:");
-    if (correoAmigo && correoAmigo.trim() !== "") {
-        // TODO (Santi/Diego): Conectar con la BD para buscar el correo y añadir nodo al Grafo.
-        alert(`Solicitud enviada o amigo agregado con el correo: ${correoAmigo}`);
+async function agregarAmigo() {
+    const correoAmigo = prompt("Ingresa el CORREO ELECTRONICO (unico) de tu nuevo amigo:");
+    if (!correoAmigo || correoAmigo.trim() === "") return;
+
+    if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado()) {
+        alert("La base de datos no esta configurada.");
+        return;
+    }
+
+    try {
+        const { error } = await window.ToxichatDB.cliente.rpc('enviar_solicitud_amistad', { p_email_destino: correoAmigo.trim() });
+        if (error) {
+            alert("Error al enviar solicitud: " + error.message);
+        } else {
+            alert("Solicitud enviada a: " + correoAmigo);
+        }
+    } catch (err) {
+        alert("Excepcion al enviar solicitud: " + err.message);
     }
 }
 
@@ -588,57 +601,59 @@ function guardarPerfil() {
     actualizarListaAmigos();
 }
 
-function aceptarAmigo(idAmigo, nombre, correo) {
-    if (!usuarioActual) return;
+async function aceptarAmigo(solicitudId, nombre, correo) {
+    if (!usuarioActual || !window.ToxichatDB) return;
 
-    // 1. Añadir al Grafo (peso 100 por defecto)
-    socialGraph.addEdge(usuarioActual.id, idAmigo, 100);
+    try {
+        const { error } = await window.ToxichatDB.cliente.rpc('aceptar_solicitud_amistad', { p_solicitud_id: solicitudId });
 
-    // 2. Insertar al inicio de Mis Chats
-    const listaChats = document.getElementById("lista-chats-container");
-    const nuevoChat = document.createElement("div");
-    nuevoChat.className = "chat-item";
-    nuevoChat.id = `chat-${idAmigo}`;
-    nuevoChat.onclick = () => abrirChat(idAmigo, nombre, correo);
-    nuevoChat.innerHTML = `
-        <div class="avatar">${nombre.charAt(0).toUpperCase()}</div>
-        <div class="chat-info">
-            <h4>${nombre}</h4>
-            <p>Nuevo contacto (Grafo conectado)</p>
-        </div>
-    `;
-    listaChats.prepend(nuevoChat);
+        if (error) {
+            alert("Error al aceptar amigo: " + error.message);
+            return;
+        }
 
-    // 3. Eliminar la solicitud de la UI
-    const solicitud = document.getElementById(`solicitud-${idAmigo.split('_')[0]}`);
-    if (solicitud) solicitud.remove();
-
-    // 4. Actualizar lista de "Mis Amigos"
-    actualizarListaAmigos();
-    alert(` ${nombre} ha sido agregado a tu lista de amigos y chats.`);
+        // Recargar datos actualizados desde la BD
+        await cargarDatosIniciales();
+        alert(nombre + " ha sido agregado a tu lista de amigos.");
+    } catch (err) {
+        alert("Excepcion al aceptar amigo: " + err.message);
+    }
 }
 
-function rechazarSolicitud(idDOM) {
-    const el = document.getElementById(idDOM);
-    if (el) el.remove();
+async function rechazarSolicitud(solicitudId, idDOM) {
+    if (!window.ToxichatDB) return;
+    try {
+        const { error } = await window.ToxichatDB.cliente.rpc('rechazar_solicitud_amistad', { p_solicitud_id: solicitudId });
+        if (error) {
+            alert("Error al rechazar solicitud: " + error.message);
+            return;
+        }
+        const el = document.getElementById(idDOM);
+        if (el) el.remove();
+    } catch (err) {
+        alert("Excepcion al rechazar solicitud: " + err.message);
+    }
 }
 
-function eliminarAmigo(idAmigo) {
-    if (!usuarioActual || !socialGraph.nodes[usuarioActual.id]) return;
-
-    // 1. Quitar conexión del Grafo
-    delete socialGraph.nodes[usuarioActual.id][idAmigo];
-    if (socialGraph.nodes[idAmigo]) {
-        delete socialGraph.nodes[idAmigo][usuarioActual.id];
+async function eliminarAmigo(nombreUsuario) {
+    if (!window.ToxichatDB || !window.ToxichatDB.estaConfigurado()) {
+        mostrarMensajeUI("La base de datos no esta configurada.", "error");
+        return;
     }
 
-    // 2. Quitar de la lista de chats
-    const chatEl = document.getElementById(`chat-${idAmigo}`);
-    if (chatEl) chatEl.remove();
+    try {
+        const { error } = await window.ToxichatDB.cliente.rpc('eliminar_amistad', { p_nombre_usuario: nombreUsuario });
+        if (error) {
+            mostrarMensajeUI("Error al eliminar amigo: " + error.message, "error");
+            return;
+        }
 
-    // 3. Actualizar UI
-    actualizarListaAmigos();
-    alert(`Amigo ${idAmigo} eliminado. Ya no podrás enviarle mensajes (Costo: Infinity).`);
+        // Recargar datos actualizados desde la BD para mantener sincronizado
+        await cargarDatosIniciales();
+        mostrarMensajeUI("Amigo eliminado correctamente.", "exito");
+    } catch (err) {
+        mostrarMensajeUI("Excepcion al eliminar amigo: " + err.message, "error");
+    }
 }
 
 async function intentarRestaurarSesion() {
