@@ -708,8 +708,61 @@ function abrirModalAmigo() {
     document.getElementById("modal-amigo-correo").innerText = correoActual;
     document.getElementById("modal-amigo-avatar").innerText = aliasActual.charAt(0).toUpperCase();
 
+    // Resetear las estadísticas del modal por defecto
+    const statsContainer = document.getElementById("modal-amigo-estadisticas");
+    if (statsContainer) {
+        statsContainer.style.display = "none";
+        statsContainer.innerHTML = "";
+    }
+
     // Mostrar modal
     document.getElementById("modal-amigo").classList.remove("oculta");
+}
+
+/** Muestra las interacciones del amigo en el modal usando Dijkstra/Grafo */
+function mostrarInteraccionesAmigo() {
+    const correoAmigo = document.getElementById("modal-amigo-correo").innerText;
+    const statsContainer = document.getElementById("modal-amigo-estadisticas");
+    
+    if (!statsContainer) return;
+
+    if (!window.socialGraph || !window.socialGraph.nodes || !window.socialGraph.nodes[correoAmigo]) {
+        statsContainer.style.display = "block";
+        statsContainer.innerHTML = "<p style='color: red; font-size: 13px;'>No hay datos en el grafo para este usuario.</p>";
+        return;
+    }
+
+    statsContainer.style.display = "block";
+    const vecinos = window.socialGraph.nodes[correoAmigo];
+    
+    // Convertir de { [vecinoId]: peso } a Array calculando mensajes originales
+    let conexiones = [];
+    for (let vecinoId in vecinos) {
+        const peso = vecinos[vecinoId];
+        // W = 100 / (mensajes + 1) => mensajes = (100 / W) - 1
+        const mensajes = Math.round((100 / peso) - 1);
+        conexiones.push({ amigo: vecinoId, mensajes: mensajes, peso: peso });
+    }
+
+    // Ordenar de mayor a menor número de mensajes
+    conexiones.sort((a, b) => b.mensajes - a.mensajes);
+
+    if (conexiones.length === 0) {
+        statsContainer.innerHTML = "<p style='color: #666; font-size: 13px;'>Este usuario no tiene conexiones en el grafo.</p>";
+        return;
+    }
+
+    let html = "<h4 style='margin: 0 0 10px 0; font-size: 14px;'>Interacciones de " + correoAmigo + "</h4>";
+    html += "<ul style='padding-left: 15px; margin: 0; font-size: 13px;'>";
+    conexiones.forEach(c => {
+        // En este mock intentaremos buscar un alias en la UI, si no, mostramos el correo
+        const aliasAmigo = c.amigo; 
+        html += `<li style="margin-bottom: 5px;">
+                    <strong>${aliasAmigo}</strong>: ${c.mensajes} mensaje(s) <span style="color: #888; font-size: 11px;">(Distancia: ${c.peso.toFixed(2)})</span>
+                 </li>`;
+    });
+    html += "</ul>";
+    statsContainer.innerHTML = html;
 }
 
 /** Cierra la ventana Modal */
