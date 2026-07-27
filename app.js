@@ -28,6 +28,9 @@ class PilaMensajes {
 // Diccionario para almacenar la pila de mensajes independiente de cada chat/usuario
 const pilasPorChat = {};
 
+// Diccionario para almacenar la informacion del amigo indexada por su UUID
+const amigosPorId = {};
+
 function obtenerPilaChat(idChat) {
     if (!pilasPorChat[idChat]) {
         pilasPorChat[idChat] = new PilaMensajes();
@@ -93,20 +96,23 @@ async function cargarListaChats() {
         }
 
         data.forEach(amigo => {
+            // Guardar en cache el objeto amigo usando su UUID
+            amigosPorId[amigo.id] = amigo;
+
             const div = document.createElement("div");
             div.className = "chat-item";
-            div.id = `chat-${amigo.nombre_usuario}`;
+            div.id = `chat-${amigo.id}`;
             const nombreMostrar = amigo.alias || amigo.nombre_usuario || amigo.email;
             const inicial = nombreMostrar.charAt(0).toUpperCase();
 
-            div.onclick = () => abrirChat(amigo.nombre_usuario, nombreMostrar, amigo.email);
+            div.onclick = () => abrirChat(amigo.id, nombreMostrar, amigo.email);
             div.innerHTML = `
                 <div class="avatar">${inicial}</div>
                 <div class="chat-info">
                     <h4>${nombreMostrar}</h4>
                     <p>${amigo.email}</p>
                 </div>
-                <span class="badge-no-leido" id="badge-${amigo.nombre_usuario}">0</span>
+                <span class="badge-no-leido" id="badge-${amigo.id}">0</span>
             `;
             listaChats.appendChild(div);
         });
@@ -205,9 +211,17 @@ function recibirMensajeEntrante(remitenteId, remitenteNombre, textoMensaje) {
 let usuarioActual = null; // Guardará los datos de quien inicie sesión
 
 function mostrarAppAutenticada(sesion) {
+    // Cargar perfil guardado localmente si existe
+    let perfilLocal = null;
+    try {
+        const raw = localStorage.getItem("perfil_" + sesion.email);
+        if (raw) perfilLocal = JSON.parse(raw);
+    } catch (_) { }
+
     usuarioActual = {
         id: sesion.email,
-        nombre: sesion.email,
+        nombre: (perfilLocal && perfilLocal.nombre) || sesion.email,
+        estado: (perfilLocal && perfilLocal.estado) || "",
         email: sesion.email,
         uuid: sesion.id,
         rsa_e: sesion.rsa_e,
@@ -223,6 +237,9 @@ function mostrarAppAutenticada(sesion) {
 
     const perfilNombre = document.getElementById("perfil-nombre");
     if (perfilNombre) perfilNombre.value = usuarioActual.nombre;
+
+    const perfilEstado = document.getElementById("perfil-estado");
+    if (perfilEstado) perfilEstado.value = usuarioActual.estado;
 
     if (window.socialGraph && usuarioActual.id) {
         window.socialGraph.addNode(usuarioActual.id);
@@ -312,7 +329,7 @@ async function enviarMensaje() {
 
     if (!destinatario || !texto) return;
 
-    const rutaValida = validarRuta_DIEGO(usuarioActual.id, destinatario);
+    const rutaValida = validarRuta_DIEGO(usuarioActual.id, correoDestino);
     if (!rutaValida) {
         mostrarMensajeUI("No tienes conexion en el grafo con este usuario.", "error");
         return;
@@ -532,7 +549,7 @@ function renderizarMensaje(pila, remitente, texto, esMio) {
     div.textContent = esMio ? texto : `${remitente}: ${texto}`;
     // panel-mensajes es column-reverse, insertamos al principio = aparece abajo
     panel.insertBefore(div, panel.firstChild);
-    panel.scrollTop = 0; // N1: Asegurar scroll al fondo
+    panel.scrollTop = panel.scrollHeight; // Asegurar scroll al fondo al renderizar
 }
 
 /** M2: Carga el historial de mensajes desde la BD para el chat abierto. */
@@ -583,15 +600,19 @@ async function cargarHistorialChat(correoAmigo) {
 }
 
 /** M1: Abre la vista individual de un chat y carga su historial. */
-async function abrirChat(amigoId, alias, correo) {
+async function abrirChat(amigoId, nombreMostrar, correo) {
+    // Resetear UI
     document.getElementById("destinatario-input").value = amigoId;
     document.getElementById("correo-amigo-actual").value = correo;
-    document.getElementById("chat-actual-alias").innerText = obtenerAliasLocal(correo, alias || correo);
+    document.getElementById("chat-actual-alias").innerText = nombreMostrar;
+    document.getElementById("modal-amigo").classList.add("oculta");
 
     // Resetear la pila local para este chat
     pilasPorChat[amigoId] = new PilaMensajes();
 
-    cambiarVista("vista-chat-individual", null);
+    // Limpio panel de mensajes
+    const panel = document.getElementById("panel-mensajes");
+    if (panel) panel.innerHTML = "";
 
     // E1: Cargar clave publica RSA del destinatario desde la BD
     if (usuarioActual) {
@@ -599,15 +620,15 @@ async function abrirChat(amigoId, alias, correo) {
         if (window.ToxichatDB && window.ToxichatDB.estaConfigurado()) {
             try {
                 const { data: perfData } = await window.ToxichatDB.cliente
-                    .from("perfiles")
-                    .select("rsa_e, rsa_n")
-                    .eq("email", correo)
-                    .single();
-                if (perfData && perfData.rsa_e && perfData.rsa_n) {
-                    usuarioActual.contactoClavePub = {
-                        e: BigInt(perfData.rsa_e),
-                        n: BigInt(perfData.rsa_n)
-                    };
+                    .rpc("obtener_clave_publica_por_email", { p_email: correo });
+                if (perfData && perfData.length > 0) {
+                    const clave = perfData[0];
+                    if (clave.rsa_e && clave.rsa_n) {
+                        usuarioActual.contactoClavePub = {
+                            e: BigInt(clave.rsa_e),
+                            n: BigInt(clave.rsa_n)
+                        };
+                    }
                 }
             } catch (_) {
                 console.warn("[E1] No se pudo cargar la clave publica del destinatario.");
@@ -618,12 +639,20 @@ async function abrirChat(amigoId, alias, correo) {
     // M2: Cargar historial desde BD
     await cargarHistorialChat(correo);
 
+    // Renderizar mensajes pendientes en la pila (Realtime que llegaron antes de abrir)
+    const pila = obtenerPilaChat(amigoId);
+    if (pila) {
+        pila.actualizarDOM();
+    }
+
     // N2: Resetear el badge de mensajes no leídos
     const badge = document.getElementById("badge-" + amigoId);
     if (badge) {
         badge.textContent = "0";
         badge.style.display = "none";
     }
+
+    cambiarVista("vista-chat-individual", "nav-chats");
 }
 
 /** Retorna a la lista principal de chats */
@@ -718,8 +747,11 @@ function actualizarListaAmigos() {
 /** Guardar información de mi perfil */
 function guardarPerfil() {
     const nuevoNombreInput = document.getElementById("perfil-nombre");
-    if (!nuevoNombreInput) return;
+    const nuevoEstadoInput = document.getElementById("perfil-estado");
+    if (!nuevoNombreInput || !nuevoEstadoInput) return;
+
     const nuevoNombre = nuevoNombreInput.value.trim();
+    const nuevoEstado = nuevoEstadoInput.value.trim();
 
     if (nuevoNombre === "") {
         alert("El nombre no puede estar vacío.");
@@ -728,8 +760,22 @@ function guardarPerfil() {
 
     if (usuarioActual) {
         usuarioActual.nombre = nuevoNombre;
+        usuarioActual.estado = nuevoEstado;
         const etiqueta = document.getElementById("nombre-usuario-activo");
         if (etiqueta) etiqueta.textContent = usuarioActual.nombre;
+    }
+
+    // Persistir en localStorage
+    const perfil = {
+        nombre: nuevoNombre,
+        estado: nuevoEstado
+    };
+    try {
+        localStorage.setItem("perfil_" + usuarioActual.email, JSON.stringify(perfil));
+        alert("Perfil guardado correctamente.");
+    } catch (e) {
+        console.error("Error guardando perfil en localStorage", e);
+        alert("No se pudo guardar el perfil en el navegador.");
     }
 
     actualizarListaAmigos();
@@ -816,10 +862,15 @@ function manejarMensajeEntrante(payload) {
     if (!msg || !usuarioActual) return;
 
     const remitenteId = msg.remitente_id;
+    const amigo = amigosPorId[remitenteId];
+    if (!amigo) {
+        console.warn("[Realtime] Mensaje de remitente desconocido:", remitenteId);
+        return;
+    }
 
-    // Filtrar por grafo: solo aceptar de amigos
-    if (!esAmigoEnGrafo(remitenteId)) {
-        console.warn("[Realtime] Mensaje ignorado de no-amigo:", remitenteId);
+    // Filtrar por grafo: solo aceptar de amigos (validado con su correo)
+    if (!esAmigoEnGrafo(amigo.email)) {
+        console.warn("[Realtime] Mensaje ignorado de no-amigo:", amigo.email);
         return;
     }
 
@@ -830,11 +881,9 @@ function manejarMensajeEntrante(payload) {
         texto = msg.contenido;
     }
 
-    // Buscar el correo/alias del remitente en la lista de chats del DOM
-    const chatEl = document.getElementById("chat-" + remitenteId);
-    const remitente = chatEl ? chatEl.querySelector("h4").textContent : remitenteId;
+    const remitente = amigo.alias || amigo.nombre_usuario || amigo.email;
 
-    // Encontrar el amigoId (nombre_usuario) para la pila
+    // Encontrar el amigoId (UUID) para la pila
     const pila = obtenerPilaChat(remitenteId);
 
     // Si el chat activo es del remitente, mostrar en DOM
