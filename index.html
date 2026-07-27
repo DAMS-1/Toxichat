@@ -613,8 +613,10 @@
             <h2 id="modal-amigo-nombre" style="margin-bottom: 5px;">Nombre Amigo</h2>
             <p style="color: #666; margin-top: 0;" id="modal-amigo-correo">correo@ejemplo.com</p>
             <hr>
-            <p style="font-size: 13px; color: #888;"><em>Espacio para futuros datos (Ej: Conexión en el grafo de
-                    confianza, fecha de registro).</em></p>
+            <button id="btn-ver-interacciones" onclick="mostrarInteraccionesAmigo()" style="margin-top: 10px; background-color: #8a2be2; font-size: 13px;">Ver nivel de interacción en el grafo</button>
+            <div id="modal-amigo-estadisticas" style="margin-top: 15px; display: none; max-height: 150px; overflow-y: auto; border-top: 1px solid #eee; padding-top: 10px; text-align: left;">
+                <!-- Lista de interacciones renderizada por JS -->
+            </div>
         </div>
     </div>
 
