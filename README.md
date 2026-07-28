@@ -11,8 +11,8 @@ Para lograr este objetivo, ToxiChat incorpora de manera práctica los conceptos 
 
 ## Integrantes
 - **Laura Soto**: Diseño de la interfaz de usuario (UI), panel de chats, módulo generador de conversaciones "ToxiPreguntas" e integración general del front-end.
-- **Santiago (Santi)**: Backend, base de datos (Supabase), autenticación de usuarios y lógica de criptografía (RSA).
-- **Diego**: Lógica de estructuras de datos (Grafo Social) y algoritmo de Dijkstra para calcular la confianza y las rutas más cortas entre los nodos (usuarios).
+- **Santiago Amado**: Backend, base de datos (Supabase), autenticación de usuarios y lógica de criptografía (RSA).
+- **Diego Mejia**: Lógica de estructuras de datos (Grafo Social) y algoritmo de Dijkstra para calcular la confianza y las rutas más cortas entre los nodos (usuarios).
 
 ## Requisitos
 Para instalar y ejecutar este proyecto localmente desde cero, necesitas contar con lo siguiente:
